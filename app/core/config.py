@@ -46,17 +46,30 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
 
-    # AWS S3 (for image storage)
+    # Google Cloud Storage
+    GS_BUCKET_NAME: str = ""
+    GCP_PROJECT_ID: str = ""
+    GCP_SERVICE_ACCOUNT_JSON: str = "" # Path to json or the actual JSON string
+    
+    # OAuth (Google)
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:3000/auth/callback" # Example
+
+    # AWS S3 (Optional/Legacy)
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_REGION_NAME: str = "us-east-1"
     S3_BUCKET_NAME: str = ""
 
     # Auth
-    SECRET_KEY: str = "super_secret_key_change_in_production_12345"
+    SECRET_KEY: str = "super_secret_dev_key"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7 days
-
+    
+    # Monitoring & Observability
+    SENTRY_DSN: str = ""
+    
     class Config:
         case_sensitive = True
         env_file = ".env"

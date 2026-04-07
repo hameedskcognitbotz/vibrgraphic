@@ -9,6 +9,10 @@ class Store {
             jobs: [],
             currentJob: null,
             pollingJobs: new Set(),
+            audience: 'general',
+            format: 'infographic',
+            tone: 'Educational',
+            socialHandle: '',
         };
         this._listeners = [];
     }

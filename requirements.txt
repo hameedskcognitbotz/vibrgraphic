@@ -19,3 +19,7 @@ email-validator>=2.1.1
 requests>=2.31.0
 google-genai>=0.1.0
 aiosqlite>=0.20.0
+aiohttp>=3.9.3
+sentry-sdk[fastapi,sqlalchemy]>=1.44.1
+google-cloud-storage>=2.15.0
+google-auth>=2.29.0

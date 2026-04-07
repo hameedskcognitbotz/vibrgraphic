@@ -8,9 +8,12 @@ class Job(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, nullable=True) # Assuming User logic can be added later
     topic = Column(String, nullable=False)
+    audience = Column(String, nullable=True, default="general") # creator, educator, general
+    format = Column(String, nullable=True, default="infographic") # infographic, carousel
+    tone = Column(String, nullable=True, default="Educational")
     status = Column(String, default="pending") # pending, processing, completed, failed
     result_url = Column(String, nullable=True)
+    metadata_json = Column(JSON, nullable=True)
     error_message = Column(String, nullable=True)
-    metadata_json = Column(JSON, nullable=True) # to keep generated structures
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

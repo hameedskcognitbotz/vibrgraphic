@@ -115,6 +115,9 @@ function renderNavbar(isAuthenticated = false) {
                 <a href="#/gallery" class="${currentHash.includes('gallery') ? 'active' : ''}">
                     ${ICONS.grid} <span class="nav-hide-mobile">Gallery</span>
                 </a>
+                <a href="#/settings" class="${currentHash.includes('settings') ? 'active' : ''}">
+                    ${ICONS.settings} <span class="nav-hide-mobile">Settings</span>
+                </a>
                 <button onclick="window.__logout()" id="logout-btn">
                     ${ICONS.logout} <span class="nav-hide-mobile">Logout</span>
                 </button>
@@ -369,6 +372,11 @@ function renderLogin() {
                 <button type="submit" class="btn btn-primary btn-lg" id="login-submit">
                     Log In
                 </button>
+                <div class="auth-divider"><span>OR</span></div>
+                <a href="/api/v1/auth/login/google" class="btn btn-secondary btn-lg btn-google">
+                    <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/><path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" fill="#34A853"/><path d="M3.964 10.706c-.18-.54-.282-1.117-.282-1.706s.102-1.166.282-1.706V4.962H.957C.347 6.177 0 7.55 0 9s.347 2.823.957 4.038l3.007-2.332z" fill="#FBBC05"/><path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.962l3.007 2.332C4.672 5.164 6.656 3.58 9 3.58z" fill="#EA4335"/></svg>
+                    Continue with Google
+                </a>
             </form>
             <div class="auth-footer">
                 Don't have an account? <a href="#/register">Create one free</a>
@@ -443,7 +451,10 @@ function renderDashboard() {
                         ${ICONS.clock} ${formatDate(job.created_at)}
                     </div>
                     ${job.status === 'completed' && job.result_url 
-                        ? `<div class="job-card-preview"><img src="${job.result_url}" alt="${escapeHtml(job.topic)}" loading="lazy"></div>`
+                        ? (job.result_url.startsWith('[') 
+                            ? `<div class="job-card-preview carousel-stack">${JSON.parse(job.result_url).slice(0,3).map((url, i) => `<img src="${url}" style="z-index:${3-i}; transform: translateX(${i*10}px) translateY(${i*10}px);">`).join('')}</div>`
+                            : `<div class="job-card-preview"><img src="${job.result_url}" alt="${escapeHtml(job.topic)}" loading="lazy"></div>`
+                          )
                         : `<div class="job-card-preview"><div class="job-card-preview-placeholder">
                             ${job.status === 'processing' || job.status === 'pending' 
                                 ? '<div class="spinner" style="width:24px;height:24px;border:2px solid var(--border-default);border-top-color:var(--color-primary);border-radius:50%;animation:spin 0.8s linear infinite;"></div><span>Generating...</span>'
@@ -453,8 +464,11 @@ function renderDashboard() {
                     }
                     <div class="job-card-actions">
                         ${job.status === 'completed' && job.result_url 
-                            ? `<a href="${job.result_url}" download class="btn btn-sm btn-secondary" onclick="event.stopPropagation()">${ICONS.download} Download</a>
-                               <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); window.__previewImage('${job.result_url}', '${escapeHtml(job.topic)}')">${ICONS.eye} Preview</button>`
+                            ? (job.result_url.startsWith('[')
+                                ? `<button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); window.__viewCarousel('${job.id}')">${ICONS.grid} View Carousel</button>`
+                                : `<a href="${job.result_url}" download class="btn btn-sm btn-secondary" onclick="event.stopPropagation()">${ICONS.download} Download</a>
+                                   <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); window.__previewImage('${job.result_url}', '${escapeHtml(job.topic)}')">${ICONS.eye} Preview</button>`
+                              )
                             : ''
                         }
                     </div>
@@ -478,7 +492,7 @@ function renderDashboard() {
                 <p>Enter any topic to create a new infographic</p>
                 <div class="generate-input-row">
                     <input type="text" class="form-input form-input-lg" id="quick-topic-input" placeholder="e.g., Artificial Intelligence, Climate Change, Space Exploration..." autocomplete="off">
-                    <button class="btn btn-primary btn-lg" id="quick-generate-btn">
+                    <button class="btn btn-primary btn-lg" id="quick-generate-btn" onclick="window.__quickGenerate()">
                         ${ICONS.zap} Generate
                     </button>
                 </div>
@@ -585,21 +599,34 @@ function renderGenerate() {
     }
 
     if (currentJob && currentJob.status === 'completed' && currentJob.result_url) {
+        const isCarousel = currentJob.result_url.startsWith('[');
+        const imageUrls = isCarousel ? JSON.parse(currentJob.result_url) : [currentJob.result_url];
+        
         progressHtml = `
         <div class="generation-progress animate-in">
             <div class="progress-header">
-                <h3>🎉 Infographic ready!</h3>
+                <h3>🎉 ${isCarousel ? 'Carousel' : 'Infographic'} ready!</h3>
                 ${renderStatusBadge('completed')}
             </div>
             <div class="progress-bar-track">
                 <div class="progress-bar-fill" style="width: 100%"></div>
             </div>
-            <div style="display: flex; gap: var(--space-3); margin-top: var(--space-4);">
-                <a href="${currentJob.result_url}" download class="btn btn-primary btn-sm">${ICONS.download} Download PNG</a>
-                <button class="btn btn-secondary btn-sm" onclick="window.__previewImage('${currentJob.result_url}', '${escapeHtml(currentJob.topic)}')">${ICONS.eye} Full Preview</button>
+            <div style="display: flex; gap: var(--space-2); margin-top: var(--space-4); flex-wrap: wrap;">
+                ${!isCarousel ? `<a href="${imageUrls[0]}" download class="btn btn-primary btn-sm">${ICONS.download} Download PNG</a>` : ''}
+                <button class="btn btn-secondary btn-sm" onclick="window.__previewImage('${imageUrls[0]}', '${escapeHtml(currentJob.topic)}')">${ICONS.eye} ${isCarousel ? 'View Slides' : 'Full Preview'}</button>
+                <button class="btn btn-ghost btn-sm" onclick="window.__refineContent()">${ICONS.sparkles} Refine with AI</button>
             </div>
         </div>`;
-        previewHtml = `<img src="${currentJob.result_url}" alt="Generated infographic" style="width:100%;height:auto;">`;
+        
+        previewHtml = isCarousel 
+            ? `<div class="carousel-preview-grid">
+                ${imageUrls.map((url, i) => `
+                    <div class="carousel-preview-item" data-index="${i+1}" onclick="window.__previewImage('${url}', '${escapeHtml(currentJob.topic)} Slide ${i+1}')">
+                        <img src="${url}" alt="Slide ${i+1}">
+                    </div>
+                `).join('')}
+               </div>`
+            : `<img src="${imageUrls[0]}" alt="Generated infographic" style="width:100%;height:auto;">`;
     }
 
     if (currentJob && currentJob.status === 'failed') {
@@ -618,37 +645,88 @@ function renderGenerate() {
     ${renderNavbar(true)}
     <div class="ambient-bg"></div>
     <div class="generate-page page-transition">
-        <div class="container">
-            <div class="generate-workspace">
-                <div class="generate-panel">
-                    <h1 class="animate-in">Create <span class="gradient-text">Infographic</span></h1>
+        <div class="container" style="max-width: 1400px;">
+            <div class="generate-workspace animate-in">
+                <!-- Sidebar Control Panel -->
+                <aside class="generate-panel">
+                    <h2 style="margin-bottom: var(--space-6); font-size: var(--fs-2xl); font-weight: 800;">
+                        Create <span class="gradient-text">Magic</span>
+                    </h2>
 
-                    <div class="mode-toggle animate-in animate-in-delay-1">
-                        <button class="mode-toggle-btn active" id="mode-topic" onclick="window.__setMode('topic')">Topic Based</button>
-                        <button class="mode-toggle-btn" id="mode-article" onclick="window.__setMode('article')">Article to Infographic</button>
+                    <div class="mode-toggle" style="margin-bottom: var(--space-6);">
+                        <button class="mode-toggle-btn active" id="mode-topic" onclick="window.__setMode('topic')">Topic</button>
+                        <button class="mode-toggle-btn" id="mode-article" onclick="window.__setMode('article')">Article</button>
                     </div>
 
-                    <div class="animate-in animate-in-delay-2">
+                    <div class="generate-options-stack">
+                        <div style="margin-bottom: var(--space-4);">
+                            <span class="selector-label">Target Audience</span>
+                            <div class="selector-switch">
+                                <button class="selector-btn ${store.state.audience === 'general' ? 'active' : ''}" onclick="window.__setAudience('general')">General</button>
+                                <button class="selector-btn ${store.state.audience === 'creator' ? 'active' : ''}" onclick="window.__setAudience('creator')">Creator</button>
+                                <button class="selector-btn ${store.state.audience === 'educator' ? 'active' : ''}" onclick="window.__setAudience('educator')">Educator</button>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: var(--space-4);">
+                            <span class="selector-label">Tone</span>
+                            <div class="selector-switch">
+                                <button class="selector-btn ${store.state.tone === 'Educational' ? 'active' : ''}" onclick="window.__setTone('Educational')">Edu</button>
+                                <button class="selector-btn ${store.state.tone === 'Provocative' ? 'active' : ''}" onclick="window.__setTone('Provocative')">Provo</button>
+                                <button class="selector-btn ${store.state.tone === 'Empathetic' ? 'active' : ''}" onclick="window.__setTone('Empathetic')">Empathetic</button>
+                                <button class="selector-btn ${store.state.tone === 'Sarcastic' ? 'active' : ''}" onclick="window.__setTone('Sarcastic')">Sarcastic</button>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: var(--space-6);">
+                            <span class="selector-label">Format</span>
+                            <div class="selector-switch">
+                                <button class="selector-btn ${store.state.format === 'infographic' ? 'active' : ''}" onclick="window.__setFormat('infographic')">Infographic</button>
+                                <button class="selector-btn ${store.state.format === 'carousel' ? 'active' : ''}" onclick="window.__setFormat('carousel')">Carousel</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: var(--space-6);">
+                        <span class="selector-label">Main Topic</span>
                         <div class="topic-input-wrapper">
                             <input type="text" class="topic-input" id="gen-topic-input"
-                                placeholder="Enter your topic or paste an article..." autocomplete="off"
+                                placeholder="${currentMode === 'topic' ? 'Enter a topic...' : 'Paste URL or text...'}" 
+                                autocomplete="off" value="${currentJob ? currentJob.topic : ''}"
                                 ${isGenerating ? 'disabled' : ''}>
                         </div>
-                        <div class="topic-suggestions" id="topic-suggestions">
-                            ${suggestions.map(s => `<button class="topic-chip" onclick="document.getElementById('gen-topic-input').value='${s}'">${s}</button>`).join('')}
+                        <div class="topic-suggestions" id="topic-suggestions" style="margin-top: var(--space-3); font-size: var(--fs-xs);">
+                            ${suggestions.slice(0, 4).map(s => `<button class="topic-chip" onclick="document.getElementById('gen-topic-input').value='${s}'">${s}</button>`).join('')}
                         </div>
                     </div>
 
-                    <button class="btn btn-primary btn-lg animate-in animate-in-delay-3" id="gen-submit-btn" ${isGenerating ? 'disabled' : ''}>
-                        ${isGenerating ? '<span class="spinner"></span> Generating...' : `${ICONS.sparkles} Generate Infographic`}
+                    <button class="btn btn-primary btn-lg w-full" id="gen-submit-btn" 
+                        ${isGenerating ? 'disabled' : ''} onclick="window.__submitGenerate()">
+                        ${isGenerating ? '<span class="spinner"></span> Generating...' : `${ICONS.sparkles} Generate ${store.state.format === 'carousel' ? 'Carousel' : 'Infographic'}`}
                     </button>
 
-                    ${progressHtml}
-                </div>
+                    ${progressHtml ? `<div style="margin-top: var(--space-6);">${progressHtml}</div>` : ''}
 
-                <div class="preview-panel animate-in animate-in-delay-4">
+                    ${currentJob && currentJob.status === 'completed' && currentJob.data ? `
+                        <div class="json-editor-container animate-in">
+                            <div class="json-editor-label">
+                                <span><span class="dot" style="background:#10b981;"></span> Structured Content Data</span>
+                                <button class="btn btn-ghost btn-sm" style="padding:2px 8px; font-size:9px;" onclick="window.__reRenderWithTuning()">
+                                    ${ICONS.zap} Push to Visual
+                                </button>
+                            </div>
+                            <textarea class="json-textarea" spellcheck="false" 
+                                oninput="window.__updateStructuredData(this.value)"
+                            >${typeof currentJob.data === 'string' ? JSON.stringify(JSON.parse(currentJob.data), null, 2) : JSON.stringify(currentJob.data, null, 2)}</textarea>
+                            <p style="padding: var(--space-2) var(--space-4); font-size: 9px; color: var(--text-tertiary);">
+                                Edit the values above and click "Push to Visual" to update the design in real-time.
+                            </p>
+                        </div>
+                    ` : ''}
+                </aside>
+
+                <!-- Main Preview Panel -->
+                <main class="preview-panel">
                     ${previewHtml}
-                </div>
+                </main>
             </div>
         </div>
     </div>`;
@@ -785,6 +863,34 @@ window.__viewJob = (jobId) => {
     }
 };
 
+window.__setAudience = (audience) => {
+    store.setState({ audience });
+    router._resolve();
+};
+
+window.__setFormat = (format) => {
+    store.setState({ format });
+    router._resolve();
+};
+
+window.__submitGenerate = () => {
+    const input = document.getElementById('gen-topic-input');
+    if (input) handleGenerate(input.value);
+};
+
+window.__quickGenerate = () => {
+    const input = document.getElementById('quick-topic-input');
+    if (input) handleGenerate(input.value);
+};
+
+window.__viewCarousel = (jobId) => {
+    const job = store.getJob(jobId);
+    if (job && job.status === 'completed' && job.result_url) {
+        store.setState({ currentJob: job });
+        router.navigate('#/generate');
+    }
+};
+
 async function handleGenerate(topic) {
     if (!topic || !topic.trim()) {
         showToast('Please enter a topic', 'warning');
@@ -792,13 +898,14 @@ async function handleGenerate(topic) {
     }
 
     try {
+        const { audience, format } = store.state;
         const fn = currentMode === 'article' ? api.articleToInfographic.bind(api) : api.generateInfographic.bind(api);
-        const job = await fn(topic.trim());
+        const job = await fn(topic.trim(), audience, format);
 
         store.addJob(job);
         store.setState({ currentJob: job });
 
-        showToast(`Job #${job.id} submitted! Generating...`, 'success');
+        showToast(`Job #${job.id} submitted! Generating ${format}...`, 'success');
 
         // Start polling
         startPolling(job.id);
@@ -984,10 +1091,20 @@ router.register('/register', () => renderRegister());
 router.register('/dashboard', () => renderDashboard(), { requireAuth: true });
 router.register('/generate', () => renderGenerate(), { requireAuth: true });
 router.register('/gallery', () => renderGallery(), { requireAuth: true });
+router.register('/settings', () => renderSettings(), { requireAuth: true });
 
 // Start app
 const appEl = document.getElementById('app');
-router.start(appEl);
+if (api.isAuthenticated) {
+    api.getProfile().then(user => {
+        store.setState({ user, socialHandle: user.social_handle });
+        router.start(appEl);
+    }).catch(() => {
+        router.start(appEl);
+    });
+} else {
+    router.start(appEl);
+}
 
 // Resume polling for any in-progress jobs
 store.state.jobs.forEach(job => {
@@ -997,3 +1114,154 @@ store.state.jobs.forEach(job => {
 });
 
 console.log('%c✨ VibeGraphic Loaded', 'color: #8b5cf6; font-size: 16px; font-weight: bold;');
+
+// ============================================================
+// Viral Enhancement Handlers
+// ============================================================
+
+window.__setTone = (tone) => {
+    store.setState({ tone });
+};
+
+window.__refineContent = async () => {
+    const currentJob = store.state.currentJob;
+    if (!currentJob || !currentJob.data) return;
+
+    const instruction = prompt("Refinement Instruction (e.g. 'Make it more punchy', 'Add more statistics', 'Sarcastic tone'):", "Make it viral and high-impact");
+    if (!instruction) return;
+
+    showToast("Refining content with AI...", "info");
+    
+    try {
+        const refinedData = await api.refineContent(
+            typeof currentJob.data === 'string' ? JSON.parse(currentJob.data) : currentJob.data,
+            instruction,
+            store.state.format === 'carousel'
+        );
+
+        if (refinedData) {
+            showToast("Content refined! Re-rendering visual...", "success");
+            
+            const renderJob = await api.renderContent(
+                refinedData,
+                store.state.format === 'carousel'
+            );
+
+            store.setState({ currentJob: renderJob });
+            showToast("Visual updated! 🎉", "success");
+            router._resolve();
+            startPolling(renderJob.id);
+        }
+    } catch (err) {
+        showToast("Refinement failed: " + err.message, "error");
+    }
+};
+
+// ============================================================
+// Branding & Real-time Preview Features
+// ============================================================
+
+window.__updateBranding = async () => {
+    const handle = document.getElementById('setting-social-handle')?.value;
+    if (!handle) return;
+
+    showToast("Updating branding profile...", "info");
+    try {
+        const user = await api.put('/auth/me', { social_handle: handle });
+        if (user) {
+            store.setState({ user, socialHandle: user.social_handle });
+            showToast("Settings saved!", "success");
+        }
+    } catch (err) {
+        showToast("Update failed: " + err.message, "error");
+    }
+};
+
+window.__toggleSettings = () => {
+    const currentView = store.state.view;
+    store.setState({ view: currentView === 'settings' ? 'home' : 'settings' });
+};
+
+window.__updateStructuredData = (val) => {
+    try {
+        const parsed = JSON.parse(val);
+        const currentJob = store.state.currentJob;
+        if (currentJob) {
+            store.updateJob(currentJob.id, { data: JSON.stringify(parsed) });
+        }
+    } catch (e) {
+        // Silent error for invalid JSON during typing
+    }
+};
+
+window.__reRenderWithTuning = async () => {
+    const currentJob = store.state.currentJob;
+    if (!currentJob) return;
+
+    const data = typeof currentJob.data === 'string' ? JSON.parse(currentJob.data) : currentJob.data;
+    
+    showToast("Re-rendering with your tweaks...", "info");
+    try {
+        const renderResponse = await api.post('/render', {
+            data,
+            is_carousel: store.state.format === 'carousel'
+        });
+
+        if (renderResponse) {
+            const imageUrls = renderResponse.urls || [renderResponse.url];
+            store.updateJob(currentJob.id, { 
+                result_url: JSON.stringify(imageUrls)
+            });
+            showToast("Visual updated!", "success");
+        }
+    } catch (err) {
+        showToast("Render failed: " + err.message, "error");
+    }
+};
+
+// ============================================================
+// SETTINGS PAGE
+// ============================================================
+function renderSettings() {
+    const user = store.state.user;
+    return `
+    ${renderNavbar(true)}
+    <div class="container page-transition">
+        <div class="settings-view">
+            <div class="settings-header">
+                <div class="feature-icon feature-icon-violet">${ICONS.settings}</div>
+                <div>
+                    <h2 style="margin:0;">Branding & Profile</h2>
+                    <p style="margin:0;color:var(--text-tertiary);font-size:var(--fs-sm);">Configure how your content is branded</p>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <label class="settings-label">Social Handle</label>
+                <div class="input-group">
+                    <span class="gallery-search-icon">@</span>
+                    <input type="text" class="form-input" id="setting-social-handle" 
+                           placeholder="YourHandle (e.g. janesmith)" 
+                           value="${user?.social_handle || ''}">
+                </div>
+                <p style="margin-top:var(--space-2);font-size:var(--fs-xs);color:var(--text-tertiary);">
+                    This handle will be automatically added to the footer of all your generated graphics.
+                </p>
+            </div>
+
+            <div class="settings-group">
+                <label class="settings-label">Brand Display Name</label>
+                <input type="text" class="form-input" id="setting-full-name" 
+                       placeholder="Full Name / Brand Name" 
+                       value="${user?.full_name || ''}">
+            </div>
+
+            <div style="margin-top:var(--space-10); display:flex; gap:var(--space-4);">
+                <button class="btn btn-primary" onclick="window.__updateBranding()">
+                    ${ICONS.check} Save Changes
+                </button>
+                <a href="#/dashboard" class="btn btn-ghost">Cancel</a>
+            </div>
+        </div>
+    </div>`;
+}

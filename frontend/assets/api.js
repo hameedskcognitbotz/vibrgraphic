@@ -85,8 +85,16 @@ class ApiClient {
     }
 
     // --- Infographics ---
-    async generateInfographic(topic) {
-        return this._request('POST', '/infographics/generate', { topic });
+    async generateInfographic(topic, audience = 'general', format = 'infographic') {
+        return this._request('POST', '/infographics/generate', { 
+            topic, 
+            audience, 
+            format 
+        });
+    }
+
+    async renderContent(data, isCarousel = false) {
+        return this._request('POST', '/infographics/render', { data, is_carousel: isCarousel });
     }
 
     async articleToInfographic(topic) {
@@ -103,6 +111,23 @@ class ApiClient {
 
     async editInfographic(jobId, data) {
         return this._request('POST', `/infographics/${jobId}/edit`, data);
+    }
+
+    // --- Profile & Content Refinement ---
+    async getProfile() {
+        return this._request('GET', '/auth/me');
+    }
+
+    async updateProfile(data) {
+        return this._request('PUT', '/auth/me', data);
+    }
+
+    async refineContent(data, instruction, isCarousel = false) {
+        return this._request('POST', '/infographics/refine', { 
+            data, 
+            instruction, 
+            is_carousel: isCarousel 
+        });
     }
 }
 

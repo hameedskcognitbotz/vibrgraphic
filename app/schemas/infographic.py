@@ -3,7 +3,7 @@ Pydantic schemas for the rich infographic content output.
 These mirror the JSON structure returned by generate_structured_content().
 """
 from __future__ import annotations
-from typing import List, Literal
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 class ThemeSchema(BaseModel):
@@ -31,6 +31,12 @@ class CenterElementSchema(BaseModel):
     subtitle: str = Field(..., description="Secondary text for center element")
     icon: str = Field(..., description="Icon keyword for center element")
 
+class SlideSchema(BaseModel):
+    title: str = Field(..., description="The heading for this specific slide")
+    content: List[str] = Field(..., description="Bullet points for this slide")
+    image_prompt: str = Field(..., description="Vivid prompt for an AI image to accompany the slide")
+    footer_note: Optional[str] = Field(None, description="Optional footer note for the slide")
+
 class InfographicData(BaseModel):
     title: str = Field(..., description="Compelling main headline for the infographic")
     layout: Literal["grid", "circular", "step-flow", "timeline"] = Field(..., description="Dynamically chosen layout type")
@@ -39,3 +45,10 @@ class InfographicData(BaseModel):
     charts: List[ChartData] = Field(..., description="A list of relevant data charts")
     statistics: List[str] = Field(..., description="Key statistics (e.g. '75% adoption rate')")
     center_element: CenterElementSchema = Field(..., description="Center highlight element data")
+
+class CarouselData(BaseModel):
+    title: str = Field(..., description="Main title of the slide deck")
+    topic: str = Field(..., description="The topic being discussed")
+    slides: List[SlideSchema] = Field(..., min_length=4, max_length=10, description="4-10 slides for a social media carousel")
+    theme: ThemeSchema = Field(..., description="Color theme for the carousel")
+    author_handle: Optional[str] = Field(None, description="Social media handle to display on slides")

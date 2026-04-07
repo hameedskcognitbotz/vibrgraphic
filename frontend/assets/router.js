@@ -67,27 +67,21 @@ class Router {
     _render(route) {
         if (!this.appEl) return;
 
-        // Page transition
-        this.appEl.style.opacity = '0';
-        this.appEl.style.transform = 'translateY(10px)';
+        this.appEl.innerHTML = '';
+        const content = route.handler(route.params || []);
 
-        setTimeout(() => {
-            this.appEl.innerHTML = '';
-            const content = route.handler(route.params || []);
+        if (typeof content === 'string') {
+            this.appEl.innerHTML = content;
+        } else if (content instanceof HTMLElement) {
+            this.appEl.appendChild(content);
+        }
 
-            if (typeof content === 'string') {
-                this.appEl.innerHTML = content;
-            } else if (content instanceof HTMLElement) {
-                this.appEl.appendChild(content);
-            }
-
-            // Trigger transition
-            requestAnimationFrame(() => {
-                this.appEl.style.transition = 'opacity 0.35s ease, transform 0.35s ease';
-                this.appEl.style.opacity = '1';
-                this.appEl.style.transform = 'translateY(0)';
-            });
-        }, 100);
+        // Just ensure it's visible
+        this.appEl.style.opacity = '1';
+        this.appEl.style.transform = 'none';
+        
+        // Final scroll to top
+        window.scrollTo(0, 0);
     }
 }
 

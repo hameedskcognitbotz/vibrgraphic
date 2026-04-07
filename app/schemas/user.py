@@ -9,7 +9,9 @@ class UserResponse(BaseModel):
     id: int
     email: EmailStr
     is_active: bool
-    tier: str
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    social_handle: Optional[str] = None
     usage_count: int
     limit_month: int
 

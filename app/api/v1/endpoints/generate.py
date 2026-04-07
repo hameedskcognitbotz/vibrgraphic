@@ -13,6 +13,8 @@ from app.services.ai_service import generate_structured_content
 
 router = APIRouter()
 
+from app.services.infographic_service import create_and_enqueue_job
+
 @router.post("/generate", status_code=200)
 async def generate_infographic(
     job_in: JobCreate,
@@ -20,36 +22,70 @@ async def generate_infographic(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Submits a new infographic generation topic. Returns structured JSON immediately.
+    Submits a new infographic generation topic. Returns a JOB object immediately.
     """
     if current_user.usage_count >= current_user.limit_month:
         raise HTTPException(
             status_code=403, 
-            detail=f"Usage limit exceeded. Please upgrade your tier. Current usage: {current_user.usage_count}/{current_user.limit_month}"
+            detail=f"Usage limit exceeded. Current usage: {current_user.usage_count}/{current_user.limit_month}"
         )
 
     try:
-        # Generate JSON content
-        infographic_data = await generate_structured_content(job_in.topic)
-        
-        # Save to DB
-        new_info = Infographic(
+        # Create background JOB
+        job = await create_and_enqueue_job(
+            db, 
+            topic=job_in.topic, 
             user_id=current_user.id,
-            topic=job_in.topic,
-            data=json.dumps(infographic_data)
+            audience=job_in.audience or "general",
+            format=job_in.format or "infographic",
+            tone=job_in.tone or "Educational"
         )
-        db.add(new_info)
         
         # Increment usage
         current_user.usage_count += 1
-        
         await db.commit()
-        await db.refresh(new_info)
         
-        return infographic_data
+        return job
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+from app.services.rendering_engine import render_image, render_carousel
+import uuid
+import os
+from fastapi import Response
+
+@router.post("/render", status_code=200)
+async def render_content(
+    data: dict,
+    is_carousel: bool = False,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Renders structured data into images.
+    """
+    media_path = "media"
+    os.makedirs(media_path, exist_ok=True)
+    
+    unique_id = str(uuid.uuid4())
+    
+    if is_carousel:
+        images = render_carousel(data)
+        urls = []
+        for i, img_bytes in enumerate(images):
+            filename = f"carousel_{unique_id}_{i}.png"
+            filepath = os.path.join(media_path, filename)
+            with open(filepath, "wb") as f:
+                f.write(img_bytes)
+            urls.append(f"/media/{filename}")
+        return {"urls": urls}
+    else:
+        img_bytes = render_image(data)
+        filename = f"infographic_{unique_id}.png"
+        filepath = os.path.join(media_path, filename)
+        with open(filepath, "wb") as f:
+            f.write(img_bytes)
+        return {"url": f"/media/{filename}"}
 
 @router.get("/gallery")
 async def get_user_gallery(
@@ -75,3 +111,19 @@ async def get_user_gallery(
         })
     return res
 
+
+@router.post("/refine")
+async def refine_content(
+    refine_data: dict, # contains current data and refinement instruction
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Refines existing content with a specific instruction (e.g. \"make it more punchy\").
+    """
+    data = refine_data.get("data")
+    instruction = refine_data.get("instruction", "make it more engaging")
+    is_carousel = refine_data.get("is_carousel", False)
+    
+    from app.services.ai_service import refine_structured_content
+    result = await refine_structured_content(data, instruction, is_carousel)
+    return result
