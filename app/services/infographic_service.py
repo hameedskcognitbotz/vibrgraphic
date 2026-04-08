@@ -1,11 +1,21 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.job import Job
 from app.worker.celery_app import celery_app
+from app.core.config import settings
+import threading
 import logging
 
 logger = logging.getLogger(__name__)
 
-async def create_and_enqueue_job(db: AsyncSession, topic: str, user_id: int = None, audience: str = "general", format: str = "infographic", tone: str = "Educational") -> Job:
+async def create_and_enqueue_job(
+    db: AsyncSession,
+    topic: str,
+    user_id: int = None,
+    audience: str = "general",
+    format: str = "infographic",
+    tone: str = "Educational",
+    metadata_json: dict | None = None,
+) -> Job:
     """
     Creates a new job in the database and queues it for processing in Celery.
     """
@@ -15,6 +25,7 @@ async def create_and_enqueue_job(db: AsyncSession, topic: str, user_id: int = No
         audience=audience,
         format=format,
         tone=tone,
+        metadata_json=metadata_json,
         status="pending"
     )
     
@@ -23,6 +34,16 @@ async def create_and_enqueue_job(db: AsyncSession, topic: str, user_id: int = No
     await db.refresh(new_job)
     
     logger.info(f"Created Job {new_job.id} for topic '{topic}'. Dispatching to queue...")
+
+    if settings.INLINE_JOB_EXECUTION:
+        logger.info(f"INLINE_JOB_EXECUTION enabled. Running Job {new_job.id} via local worker thread.")
+        from app.worker.tasks import process_infographic_generation
+        threading.Thread(
+            target=process_infographic_generation,
+            args=(new_job.id,),
+            daemon=True,
+        ).start()
+        return new_job
 
     # Dispatch to Celery Queue
     try:

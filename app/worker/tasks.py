@@ -37,25 +37,46 @@ def process_infographic_generation(job_id: int):
             logger.info(f"Processing job {job_id}: Topic '{job.topic}', Format: {job.format}")
 
             # Fetch user branding if user_id exists
+            job_metadata = job.metadata_json or {}
+            brand_kit = job_metadata.get("brand_kit") or {}
             author_handle = "@VibeGraphic"
             if job.user_id:
                 from app.models.user import User
                 user = session.get(User, job.user_id)
                 if user and user.social_handle:
                     author_handle = user.social_handle
+            author_handle = brand_kit.get("social_handle") or author_handle
 
             # 2. Extract structured content (AI Layer)
             is_carousel = job.format == "carousel"
+            generation_mode = job_metadata.get("generation_mode", "creative")
             structured_data = asyncio.run(generate_structured_content(
                 job.topic, 
                 audience=job.audience, 
                 is_carousel=is_carousel,
-                tone=job.tone or "Educational"
+                tone=job.tone or "Educational",
+                template_key=job_metadata.get("template_key"),
+                export_preset=job_metadata.get("export_preset"),
+                brand_context=brand_kit,
+                generation_mode=generation_mode,
             ))
             
             # Inject Branding
             structured_data["author_handle"] = author_handle
-            job.metadata_json = structured_data
+            if brand_kit.get("brand_name"):
+                structured_data["brand_name"] = brand_kit["brand_name"]
+            if brand_kit.get("cta_text"):
+                structured_data["cta_text"] = brand_kit["cta_text"]
+            if brand_kit.get("primary_color") or brand_kit.get("accent_color"):
+                theme = structured_data.setdefault("theme", {})
+                if brand_kit.get("primary_color"):
+                    theme["primary_color"] = brand_kit["primary_color"]
+                if brand_kit.get("accent_color"):
+                    theme["secondary_color"] = brand_kit["accent_color"]
+            job.metadata_json = {
+                **job_metadata,
+                "structured_content": structured_data,
+            }
             
             # 3. Render Image(s)
             media_path = "media"
@@ -64,8 +85,14 @@ def process_infographic_generation(job_id: int):
             
             from app.services.storage_service import storage_service
             
+            export_preset = job_metadata.get("export_preset")
+
             if is_carousel:
-                rendered_slides = render_carousel(structured_data)
+                rendered_slides = render_carousel(
+                    structured_data,
+                    export_preset=export_preset,
+                    generation_mode=generation_mode,
+                )
                 urls = []
                 for i, img_bytes in enumerate(rendered_slides):
                     filename = f"carousel_{unique_id}_{i}.png"
@@ -83,7 +110,11 @@ def process_infographic_generation(job_id: int):
                     urls.append(url)
                 job.result_url = json.dumps(urls) # Store as list of urls
             else:
-                img_bytes = render_image(structured_data)
+                img_bytes = render_image(
+                    structured_data,
+                    export_preset=export_preset,
+                    generation_mode=generation_mode,
+                )
                 filename = f"infographic_{unique_id}.png"
                 # Try to upload to GCS
                 try:

@@ -1,16 +1,24 @@
 import io
 import logging
 import textwrap
-import urllib.parse
-import asyncio
-import aiohttp
 import random
 import os
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
+from google import genai
+from google.genai import types
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "fonts")
+
+PRESET_SPECS = {
+    "instagram_carousel": {"width": 1080, "height": 1080},
+    "linkedin_post": {"width": 1200, "height": 1500},
+    "story": {"width": 1080, "height": 1920},
+}
+
+_image_client: genai.Client | None = None
 
 def hex_to_rgb(hex_color: str):
     """Utility to convert hex (#RRGGBB) to RGB tuple."""
@@ -68,7 +76,94 @@ def apply_drop_shadow(img, offset=(10, 10), background_color=(0,0,0,0), blur_rad
     final_img.paste(img, (blur_radius - offset[0]//2, blur_radius - offset[1]//2), mask=img)
     return final_img
 
-def render_image(layout_data: dict) -> bytes:
+def _get_image_client() -> genai.Client | None:
+    global _image_client
+    if _image_client is not None:
+        return _image_client
+    if not settings.GEMINI_API_KEY:
+        return None
+    try:
+        _image_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        return _image_client
+    except Exception as err:
+        logger.warning(f"Gemini image client init failed: {err}")
+        return None
+
+def _aspect_ratio(width: int, height: int) -> str:
+    ratio = width / height if height else 1
+    if abs(ratio - 1.0) < 0.05:
+        return "1:1"
+    if abs(ratio - 4 / 5) < 0.05:
+        return "4:5"
+    if abs(ratio - 9 / 16) < 0.05:
+        return "9:16"
+    if abs(ratio - 16 / 9) < 0.05:
+        return "16:9"
+    return "1:1"
+
+def _extract_image_bytes(response: types.GenerateContentResponse) -> bytes | None:
+    parts = []
+    if getattr(response, "candidates", None):
+        for candidate in response.candidates:
+            content = getattr(candidate, "content", None)
+            candidate_parts = getattr(content, "parts", None) if content else None
+            if candidate_parts:
+                parts.extend(candidate_parts)
+    if not parts and getattr(response, "parts", None):
+        parts.extend(response.parts)
+
+    for part in parts:
+        inline_data = getattr(part, "inline_data", None)
+        if inline_data and getattr(inline_data, "data", None):
+            return inline_data.data
+    return None
+
+def _placeholder_image(width: int, height: int) -> Image.Image:
+    return Image.new("RGBA", (width, height), (30, 41, 59, 255))
+
+def _generate_gemini_image(prompt: str, width: int, height: int, generation_mode: str = "creative") -> Image.Image:
+    client = _get_image_client()
+    if client is None:
+        return _placeholder_image(width, height)
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-3-pro-image-preview",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=[types.Modality.IMAGE],
+                image_config=types.ImageConfig(
+                    aspectRatio=_aspect_ratio(width, height),
+                ),
+                tools=[types.Tool(google_search=types.GoogleSearch())] if generation_mode == "grounded" else None,
+            ),
+        )
+        image_bytes = _extract_image_bytes(response)
+        if not image_bytes:
+            return _placeholder_image(width, height)
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+        return ImageOps.fit(img, (width, height), Image.Resampling.LANCZOS)
+    except Exception as err:
+        logger.warning(f"Gemini image generation failed, using placeholder: {err}")
+        return _placeholder_image(width, height)
+
+def get_preset_spec(export_preset: str | None, is_carousel: bool) -> dict:
+    if export_preset in PRESET_SPECS:
+        return PRESET_SPECS[export_preset]
+    return {"width": 1080, "height": 1080} if is_carousel else {"width": 1300, "height": 1800}
+
+def _fit_to_canvas(img: Image.Image, target_width: int, target_height: int, bg_color: tuple[int, int, int]) -> Image.Image:
+    fitted = ImageOps.contain(img, (target_width, target_height), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGB", (target_width, target_height), bg_color)
+    offset = ((target_width - fitted.width) // 2, (target_height - fitted.height) // 2)
+    canvas.paste(fitted, offset)
+    return canvas
+
+def render_image(
+    layout_data: dict,
+    export_preset: str | None = None,
+    generation_mode: str = "creative",
+) -> bytes:
     """
     Renders a stunning, premium infographic via Pillow.
     Features: Typography bundling, Glassmorphism, Drop Shadows, and Smart Scaling.
@@ -100,18 +195,18 @@ def render_image(layout_data: dict) -> bytes:
     total_height = title_height
     wrapped_sections = []
     
-    async def fetch_section_image(session, sec):
+    def fetch_section_image(sec):
         prompt = sec.get("illustration_prompt", "abstract technology")
-        img_prompt = f"{prompt}, vibrant 3C isometric 3D render, studio lighting, depth of field, high quality"
-        encoded_prompt = urllib.parse.quote(img_prompt)
-        img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={base_img_width}&height={base_img_height}&nologo=true"
-        
-        try:
-            async with session.get(img_url, timeout=10) as res:
-                content = await res.read()
-                sec_img = Image.open(io.BytesIO(content)).convert("RGBA")
-        except:
-            sec_img = Image.new("RGBA", (base_img_width, base_img_height), (30, 41, 59, 255))
+        mode_prompt = (
+            " factual, grounded in recent public information, realistic chart context,"
+            if generation_mode == "grounded"
+            else " stylized creative direction,"
+        )
+        img_prompt = (
+            f"{prompt}, premium infographic illustration,{mode_prompt}"
+            " clean typography zones, label-safe composition, high detail, no gibberish text"
+        )
+        sec_img = _generate_gemini_image(img_prompt, base_img_width, base_img_height, generation_mode)
             
         # 1. Round corners
         mask = Image.new("L", sec_img.size, 0)
@@ -126,12 +221,7 @@ def render_image(layout_data: dict) -> bytes:
         elevated_img = apply_drop_shadow(rounded_img)
         return elevated_img, dom_color
 
-    async def fetch_all():
-        async with aiohttp.ClientSession() as session:
-            tasks = [fetch_section_image(session, sec) for sec in sections]
-            return await asyncio.gather(*tasks)
-
-    image_results = asyncio.run(fetch_all())
+    image_results = [fetch_section_image(sec) for sec in sections]
     
     for sec, (elevated_img, dom_color) in zip(sections, image_results):
         desc_wrap = textwrap.wrap(sec.get("description", ""), width=50)
@@ -170,10 +260,16 @@ def render_image(layout_data: dict) -> bytes:
         draw.line([(0, y), (width, y)], fill=(r, g, b, 255))
 
     # 2. Ambient Decorations
+    # Draw decoration on a separate RGBA overlay, then alpha-composite.
+    # This avoids alpha-drop artifacts when converting final output to RGB.
+    ambient = Image.new("RGBA", (width, total_height), (0, 0, 0, 0))
+    ambient_draw = ImageDraw.Draw(ambient)
     for _ in range(15):
         x, y = random.randint(0, width), random.randint(0, total_height)
         s = random.randint(100, 400)
-        draw.ellipse([x, y, x+s, y+s], fill=(255,255,255,5))
+        ambient_draw.ellipse([x, y, x + s, y + s], fill=(255, 255, 255, 10))
+    img = Image.alpha_composite(img, ambient)
+    draw = ImageDraw.Draw(img)
 
     # 3. Draw Title
     curr_y = 70
@@ -229,18 +325,36 @@ def render_image(layout_data: dict) -> bytes:
 
     # 5. Footer
     handle = layout_data.get("author_handle", "@VibeGraphic")
-    footer_txt = f"Powered by VibeGraphic Engine • Compiled for {handle}"
+    brand_name = layout_data.get("brand_name", "VibeGraphic")
+    cta_text = layout_data.get("cta_text")
+    footer_txt = f"{brand_name} • {handle}"
+    if cta_text:
+        footer_txt = f"{footer_txt} • {cta_text}"
     lw = draw.textbbox((0,0), footer_txt, font=footer_font)[2]
     draw.text(((width - lw)/2, total_height - 100), footer_txt, fill="#475569", font=footer_font)
 
+    final_img = img.convert('RGB')
+    preset_spec = get_preset_spec(export_preset, is_carousel=False)
+    if export_preset:
+        final_img = _fit_to_canvas(final_img, preset_spec["width"], preset_spec["height"], bg_start)
+
     buf = io.BytesIO()
-    img.convert('RGB').save(buf, format='PNG', optimize=True)
+    final_img.save(buf, format='PNG', optimize=True)
     return buf.getvalue()
 
-def render_carousel(carousel_data: dict, width: int = 1080, height: int = 1080) -> list[bytes]:
+def render_carousel(
+    carousel_data: dict,
+    width: int = 1080,
+    height: int = 1080,
+    export_preset: str | None = None,
+    generation_mode: str = "creative",
+) -> list[bytes]:
     """
     Renders a set of carousel slides (1080x1080) with premium typography and auto-scaling.
     """
+    preset_spec = get_preset_spec(export_preset, is_carousel=True)
+    width = preset_spec["width"]
+    height = preset_spec["height"]
     logger.info(f"Rendering premium carousel: {carousel_data.get('title')}")
     slides = carousel_data.get("slides", [])
     theme = carousel_data.get("theme", {})
@@ -248,34 +362,38 @@ def render_carousel(carousel_data: dict, width: int = 1080, height: int = 1080) 
     bg_color = hex_to_rgb(bg_color_hex)
     primary_color = theme.get("primary_color", "#3B82F6")
     handle = carousel_data.get("author_handle", "@VibeGraphic")
+    brand_name = carousel_data.get("brand_name", "VibeGraphic")
+    cta_text = carousel_data.get("cta_text")
 
-    async def fetch_slide_image(session, slide):
-        prompt = f"{slide.get('image_prompt')}, premium 3D isometric render, isolated, studio lighting"
-        encoded_prompt = urllib.parse.quote(prompt)
-        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=600&height=600&nologo=true"
-        try:
-            async with session.get(url, timeout=10) as res:
-                content = await res.read()
-                img = Image.open(io.BytesIO(content)).convert("RGBA")
-                # Apply drop shadow
-                return apply_drop_shadow(img, blur_radius=20, shadow_alpha=100), get_dominant_color(img)
-        except:
-            return Image.new("RGBA", (600, 600), (0,0,0,0)), (59, 130, 246)
+    def fetch_slide_image(slide):
+        mode_prompt = (
+            " factual, grounded in recent public information, realistic context,"
+            if generation_mode == "grounded"
+            else " highly creative art direction,"
+        )
+        prompt = (
+            f"{slide.get('image_prompt')}, premium 3D isometric render,{mode_prompt}"
+            " isolated object, clean heading-safe negative space, high detail, no gibberish text"
+        )
+        img = _generate_gemini_image(prompt, 600, 600, generation_mode)
+        return apply_drop_shadow(img, blur_radius=20, shadow_alpha=100), get_dominant_color(img)
 
-    async def fetch_all():
-        async with aiohttp.ClientSession() as session:
-            return await asyncio.gather(*[fetch_slide_image(session, s) for s in slides])
-
-    image_results = asyncio.run(fetch_all())
+    image_results = [fetch_slide_image(slide) for slide in slides]
     rendered_slides = []
 
     for idx, (slide, (elevated_img, dom_color)) in enumerate(zip(slides, image_results)):
-        img = Image.new('RGB', (width, height), color=bg_color)
+        img = Image.new("RGBA", (width, height), color=(*bg_color, 255))
+
+        # 1. Background Decoration (alpha-safe overlay)
+        ambient = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        ambient_draw = ImageDraw.Draw(ambient)
+        ambient_draw.ellipse([width - 400, -200, width + 200, 400], fill=(255, 255, 255, 20))
+        ambient_draw.ellipse(
+            [-200, height - 400, 400, height + 200],
+            fill=(dom_color[0], dom_color[1], dom_color[2], 24),
+        )
+        img = Image.alpha_composite(img, ambient)
         draw = ImageDraw.Draw(img)
-        
-        # 1. Background Decoration
-        draw.ellipse([width-400, -200, width+200, 400], fill=(255,255,255,10))
-        draw.ellipse([-200, height-400, 400, height+200], fill=(dom_color[0], dom_color[1], dom_color[2], 15))
         
         # 2. Smart Scaling Title
         title_text = slide.get("title", "").upper()
@@ -318,7 +436,9 @@ def render_carousel(carousel_data: dict, width: int = 1080, height: int = 1080) 
 
         # 5. Footer & Branding
         footer_font = get_font(26, is_bold=True, family="Inter")
-        draw.text((80, height - 90), handle, fill=primary_color, font=footer_font)
+        draw.text((80, height - 90), f"{brand_name} • {handle}", fill=primary_color, font=footer_font)
+        if cta_text and idx == len(slides) - 1:
+            draw.text((80, height - 140), cta_text, fill="#CBD5E1", font=get_font(22, family="Inter"))
         
         # Page indicator with pill background
         page_txt = f"{idx+1} / {len(slides)}"
@@ -327,7 +447,7 @@ def render_carousel(carousel_data: dict, width: int = 1080, height: int = 1080) 
         draw.text((width - pw - 80, height - 90), page_txt, fill="#94A3B8", font=footer_font)
 
         buf = io.BytesIO()
-        img.save(buf, format='PNG')
+        img.convert("RGB").save(buf, format="PNG")
         rendered_slides.append(buf.getvalue())
     
     return rendered_slides

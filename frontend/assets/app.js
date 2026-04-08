@@ -39,6 +39,60 @@ const ICONS = {
     palette: `<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="7" r="1" fill="currentColor"/><circle cx="16" cy="10" r="1" fill="currentColor"/><circle cx="8" cy="10" r="1" fill="currentColor"/><circle cx="15" cy="15" r="1" fill="currentColor"/><path d="M7 15a2 2 0 012-2h0a2 2 0 012 2v0a2 2 0 01-2 2h0a2 2 0 01-2-2z" fill="currentColor"/></svg>`,
 };
 
+const TEMPLATE_LIBRARY = {
+    tips: {
+        label: 'Tips',
+        promptPrefix: 'Create a practical tips post about',
+        description: 'Actionable creator advice with clear takeaways',
+    },
+    checklist: {
+        label: 'Checklist',
+        promptPrefix: 'Create a checklist post about',
+        description: 'Save-friendly steps people can revisit later',
+    },
+    stats: {
+        label: 'Stats',
+        promptPrefix: 'Create a data-backed stats post about',
+        description: 'Numbers, benchmarks, and proof points',
+    },
+    before_after: {
+        label: 'Before / After',
+        promptPrefix: 'Create a before-and-after transformation post about',
+        description: 'Contrasts, change, and proof of improvement',
+    },
+    quote: {
+        label: 'Quote',
+        promptPrefix: 'Create a quote-led thought leadership post about',
+        description: 'Opinionated hook with memorable framing',
+    },
+    myth_fact: {
+        label: 'Myth / Fact',
+        promptPrefix: 'Create a myth-versus-fact post about',
+        description: 'Highly shareable contrast-driven education',
+    },
+};
+
+const EXPORT_PRESETS = {
+    instagram_carousel: {
+        label: 'Instagram Carousel',
+        format: 'carousel',
+        description: 'Square multi-slide post optimized for saves',
+    },
+    linkedin_post: {
+        label: 'LinkedIn Post',
+        format: 'infographic',
+        description: 'Single visual summary for professional sharing',
+    },
+    story: {
+        label: 'Story',
+        format: 'carousel',
+        description: 'Vertical-friendly narrative flow for quick posting',
+    },
+};
+
+const ANALYTICS_STORAGE_KEY = 'vg_analytics';
+const BRAND_KIT_STORAGE_KEY = 'vg_brand_kit';
+
 // ============================================================
 // Toast Notifications
 // ============================================================
@@ -432,6 +486,7 @@ function renderDashboard() {
     const completedCount = jobs.filter(j => j.status === 'completed').length;
     const processingCount = jobs.filter(j => j.status === 'processing' || j.status === 'pending').length;
     const failedCount = jobs.filter(j => j.status === 'failed').length;
+    const growth = getGrowthMetrics();
 
     const jobCardsHtml = jobs.length === 0 
         ? `<div class="empty-state">
@@ -451,8 +506,8 @@ function renderDashboard() {
                         ${ICONS.clock} ${formatDate(job.created_at)}
                     </div>
                     ${job.status === 'completed' && job.result_url 
-                        ? (job.result_url.startsWith('[') 
-                            ? `<div class="job-card-preview carousel-stack">${JSON.parse(job.result_url).slice(0,3).map((url, i) => `<img src="${url}" style="z-index:${3-i}; transform: translateX(${i*10}px) translateY(${i*10}px);">`).join('')}</div>`
+                        ? (getJobImageUrls(job).length > 1
+                            ? `<div class="job-card-preview carousel-stack">${getJobImageUrls(job).slice(0, 3).map((url, i) => `<img src="${url}" style="z-index:${3-i}; transform: translateX(${i*10}px) translateY(${i*10}px);">`).join('')}</div>`
                             : `<div class="job-card-preview"><img src="${job.result_url}" alt="${escapeHtml(job.topic)}" loading="lazy"></div>`
                           )
                         : `<div class="job-card-preview"><div class="job-card-preview-placeholder">
@@ -464,10 +519,10 @@ function renderDashboard() {
                     }
                     <div class="job-card-actions">
                         ${job.status === 'completed' && job.result_url 
-                            ? (job.result_url.startsWith('[')
+                            ? (getJobImageUrls(job).length > 1
                                 ? `<button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); window.__viewCarousel('${job.id}')">${ICONS.grid} View Carousel</button>`
-                                : `<a href="${job.result_url}" download class="btn btn-sm btn-secondary" onclick="event.stopPropagation()">${ICONS.download} Download</a>
-                                   <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); window.__previewImage('${job.result_url}', '${escapeHtml(job.topic)}')">${ICONS.eye} Preview</button>`
+                                : `<button class="btn btn-sm btn-secondary" onclick='window.__downloadAsset(${JSON.stringify(job.result_url)}, ${JSON.stringify(job.topic)}, event, ${job.id})'>${ICONS.download} Export</button>
+                                   <button class="btn btn-sm btn-ghost" onclick='event.stopPropagation(); window.__previewImage(${JSON.stringify(job.result_url)}, ${JSON.stringify(job.topic)})'>${ICONS.eye} Preview</button>`
                               )
                             : ''
                         }
@@ -528,6 +583,20 @@ function renderDashboard() {
                         <div class="stat-card-label">Failed</div>
                     </div>
                 </div>
+                <div class="stat-card">
+                    <div class="stat-card-icon" style="background: var(--color-primary-light); color: var(--color-primary);">${ICONS.download}</div>
+                    <div>
+                        <div class="stat-card-value">${growth.exports}</div>
+                        <div class="stat-card-label">Exports</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-icon" style="background: var(--color-success-light); color: var(--color-success);">${ICONS.sparkles}</div>
+                    <div>
+                        <div class="stat-card-value">${growth.repeatUsage}</div>
+                        <div class="stat-card-label">7-Day Returns</div>
+                    </div>
+                </div>
             </div>
 
             <!-- Recent Jobs -->
@@ -548,6 +617,12 @@ function renderDashboard() {
 function renderGenerate() {
     const currentJob = store.state.currentJob;
     const isGenerating = currentJob && (currentJob.status === 'pending' || currentJob.status === 'processing');
+    const selectedTemplate = getTemplateMeta(store.state.templateKey);
+    const selectedPreset = getPresetMeta(store.state.exportPreset);
+    const selectedGenerationMode = store.state.generationMode || 'creative';
+    const draftTopic = store.state.draftTopic || currentJob?.topic || '';
+    const brandName = store.state.brandKit.brand_name || store.state.user?.full_name || 'Your brand';
+    const socialHandle = store.state.brandKit.social_handle || store.state.user?.social_handle || '@yourhandle';
 
     const suggestions = [
         'Artificial Intelligence', 'Climate Change', 'Blockchain Technology',
@@ -599,8 +674,8 @@ function renderGenerate() {
     }
 
     if (currentJob && currentJob.status === 'completed' && currentJob.result_url) {
-        const isCarousel = currentJob.result_url.startsWith('[');
-        const imageUrls = isCarousel ? JSON.parse(currentJob.result_url) : [currentJob.result_url];
+        const imageUrls = getJobImageUrls(currentJob);
+        const isCarousel = imageUrls.length > 1;
         
         progressHtml = `
         <div class="generation-progress animate-in">
@@ -612,16 +687,17 @@ function renderGenerate() {
                 <div class="progress-bar-fill" style="width: 100%"></div>
             </div>
             <div style="display: flex; gap: var(--space-2); margin-top: var(--space-4); flex-wrap: wrap;">
-                ${!isCarousel ? `<a href="${imageUrls[0]}" download class="btn btn-primary btn-sm">${ICONS.download} Download PNG</a>` : ''}
-                <button class="btn btn-secondary btn-sm" onclick="window.__previewImage('${imageUrls[0]}', '${escapeHtml(currentJob.topic)}')">${ICONS.eye} ${isCarousel ? 'View Slides' : 'Full Preview'}</button>
+                ${!isCarousel ? `<button class="btn btn-primary btn-sm" onclick='window.__downloadAsset(${JSON.stringify(imageUrls[0])}, ${JSON.stringify(currentJob.topic)}, event, ${currentJob.id})'>${ICONS.download} Export ${escapeHtml(selectedPreset.label)}</button>` : ''}
+                <button class="btn btn-secondary btn-sm" onclick='window.__previewImage(${JSON.stringify(imageUrls[0])}, ${JSON.stringify(currentJob.topic)})'>${ICONS.eye} ${isCarousel ? 'View Slides' : 'Full Preview'}</button>
                 <button class="btn btn-ghost btn-sm" onclick="window.__refineContent()">${ICONS.sparkles} Refine with AI</button>
+                <button class="btn btn-ghost btn-sm" onclick="window.__reuseJob(${currentJob.id})">${ICONS.plus} Remix</button>
             </div>
         </div>`;
         
         previewHtml = isCarousel 
             ? `<div class="carousel-preview-grid">
                 ${imageUrls.map((url, i) => `
-                    <div class="carousel-preview-item" data-index="${i+1}" onclick="window.__previewImage('${url}', '${escapeHtml(currentJob.topic)} Slide ${i+1}')">
+                    <div class="carousel-preview-item" data-index="${i+1}" onclick='window.__previewImage(${JSON.stringify(url)}, ${JSON.stringify(`${currentJob.topic} Slide ${i + 1}`)})'>
                         <img src="${url}" alt="Slide ${i+1}">
                     </div>
                 `).join('')}
@@ -654,11 +730,45 @@ function renderGenerate() {
                     </h2>
 
                     <div class="mode-toggle" style="margin-bottom: var(--space-6);">
-                        <button class="mode-toggle-btn active" id="mode-topic" onclick="window.__setMode('topic')">Topic</button>
-                        <button class="mode-toggle-btn" id="mode-article" onclick="window.__setMode('article')">Article</button>
+                        <button class="mode-toggle-btn ${currentMode === 'topic' ? 'active' : ''}" id="mode-topic" onclick="window.__setMode('topic')">Topic</button>
+                        <button class="mode-toggle-btn ${currentMode === 'article' ? 'active' : ''}" id="mode-article" onclick="window.__setMode('article')">Article</button>
                     </div>
 
                     <div class="generate-options-stack">
+                        <div style="margin-bottom: var(--space-4);">
+                            <span class="selector-label">Export Preset</span>
+                            <div class="preset-grid">
+                                ${Object.entries(EXPORT_PRESETS).map(([key, preset]) => `
+                                    <button class="preset-card ${store.state.exportPreset === key ? 'active' : ''}" onclick="window.__setExportPreset('${key}')">
+                                        <strong>${preset.label}</strong>
+                                        <span>${preset.description}</span>
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <div style="margin-bottom: var(--space-4);">
+                            <span class="selector-label">Template</span>
+                            <div class="template-grid">
+                                ${Object.entries(TEMPLATE_LIBRARY).map(([key, template]) => `
+                                    <button class="template-card ${store.state.templateKey === key ? 'active' : ''}" onclick="window.__setTemplate('${key}')">
+                                        <strong>${template.label}</strong>
+                                        <span>${template.description}</span>
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <div style="margin-bottom: var(--space-4);">
+                            <span class="selector-label">Generation Mode</span>
+                            <div class="selector-switch">
+                                <button class="selector-btn ${selectedGenerationMode === 'creative' ? 'active' : ''}" onclick="window.__setGenerationMode('creative')">Creative</button>
+                                <button class="selector-btn ${selectedGenerationMode === 'grounded' ? 'active' : ''}" onclick="window.__setGenerationMode('grounded')">Grounded</button>
+                            </div>
+                            <p style="margin-top: var(--space-2); color: var(--text-tertiary); font-size: var(--fs-xs);">
+                                ${selectedGenerationMode === 'grounded'
+                                    ? 'Grounded mode enables Google Search grounding for more factual chart and visual context.'
+                                    : 'Creative mode prioritizes stylistic freedom and ideation.'}
+                            </p>
+                        </div>
                         <div style="margin-bottom: var(--space-4);">
                             <span class="selector-label">Target Audience</span>
                             <div class="selector-switch">
@@ -690,17 +800,20 @@ function renderGenerate() {
                         <div class="topic-input-wrapper">
                             <input type="text" class="topic-input" id="gen-topic-input"
                                 placeholder="${currentMode === 'topic' ? 'Enter a topic...' : 'Paste URL or text...'}" 
-                                autocomplete="off" value="${currentJob ? currentJob.topic : ''}"
+                                autocomplete="off" value="${escapeHtml(draftTopic)}"
                                 ${isGenerating ? 'disabled' : ''}>
                         </div>
                         <div class="topic-suggestions" id="topic-suggestions" style="margin-top: var(--space-3); font-size: var(--fs-xs);">
                             ${suggestions.slice(0, 4).map(s => `<button class="topic-chip" onclick="document.getElementById('gen-topic-input').value='${s}'">${s}</button>`).join('')}
                         </div>
+                        <p style="margin-top: var(--space-3); color: var(--text-tertiary); font-size: var(--fs-xs);">
+                            ${selectedTemplate.label} template for ${selectedPreset.label}. Brand: ${escapeHtml(brandName)} ${escapeHtml(socialHandle)}
+                        </p>
                     </div>
 
                     <button class="btn btn-primary btn-lg w-full" id="gen-submit-btn" 
                         ${isGenerating ? 'disabled' : ''} onclick="window.__submitGenerate()">
-                        ${isGenerating ? '<span class="spinner"></span> Generating...' : `${ICONS.sparkles} Generate ${store.state.format === 'carousel' ? 'Carousel' : 'Infographic'}`}
+                        ${isGenerating ? '<span class="spinner"></span> Generating...' : `${ICONS.sparkles} Generate ${escapeHtml(selectedPreset.label)}`}
                     </button>
 
                     ${progressHtml ? `<div style="margin-top: var(--space-6);">${progressHtml}</div>` : ''}
@@ -725,6 +838,19 @@ function renderGenerate() {
 
                 <!-- Main Preview Panel -->
                 <main class="preview-panel">
+                    <div class="creator-brief animate-in">
+                        <div>
+                            <span class="eyebrow">Creator Brief</span>
+                            <h3>${escapeHtml(selectedTemplate.label)} for ${escapeHtml(selectedPreset.label)}</h3>
+                            <p>${escapeHtml(selectedTemplate.description)}. Designed to increase saves, shares, and repeat posting.</p>
+                        </div>
+                        <div class="creator-brief-meta">
+                            <span>Audience: ${escapeHtml(store.state.audience)}</span>
+                            <span>Tone: ${escapeHtml(store.state.tone)}</span>
+                            <span>Format: ${escapeHtml(store.state.format)}</span>
+                            <span>Mode: ${escapeHtml(selectedGenerationMode)}</span>
+                        </div>
+                    </div>
                     ${previewHtml}
                 </main>
             </div>
@@ -745,19 +871,25 @@ function renderGallery() {
                 <p>Generate your first infographic to see it here.</p>
                 <a href="#/generate" class="btn btn-primary" id="gallery-empty-generate">${ICONS.sparkles} Create Infographic</a>
            </div>`
-        : completedJobs.map(job => `
-            <div class="gallery-item" onclick="window.__previewImage('${job.result_url}', '${escapeHtml(job.topic)}')">
-                <img src="${job.result_url}" alt="${escapeHtml(job.topic)}" class="gallery-item-image" loading="lazy">
+        : completedJobs.map(job => {
+            const previewUrl = getJobImageUrls(job)[0];
+            const isCarousel = getJobImageUrls(job).length > 1;
+
+            return `
+            <div class="gallery-item" onclick="window.__previewJob(${job.id})">
+                <img src="${previewUrl}" alt="${escapeHtml(job.topic)}" class="gallery-item-image" loading="lazy">
                 <div class="gallery-item-info">
                     <div class="gallery-item-topic">${escapeHtml(job.topic)}</div>
                     <div class="gallery-item-date">${ICONS.clock} ${formatDate(job.created_at)}</div>
                 </div>
                 <div class="gallery-item-actions">
-                    <a href="${job.result_url}" download class="btn btn-sm btn-primary" onclick="event.stopPropagation()">${ICONS.download} Download</a>
-                    <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); window.__previewImage('${job.result_url}', '${escapeHtml(job.topic)}')">${ICONS.eye} Preview</button>
+                    <button class="btn btn-sm btn-primary" onclick='window.__downloadAsset(${JSON.stringify(previewUrl)}, ${JSON.stringify(job.topic)}, event, ${job.id})'>${ICONS.download} Export</button>
+                    <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); window.__previewJob(${job.id})">${ICONS.eye} ${isCarousel ? 'Slides' : 'Preview'}</button>
+                    <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); window.__reuseJob(${job.id})">${ICONS.sparkles} Remix</button>
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
 
     return `
     ${renderNavbar(true)}
@@ -782,7 +914,7 @@ function renderGallery() {
 // ============================================================
 // Image Preview Modal
 // ============================================================
-function showPreviewModal(imageUrl, title) {
+function showPreviewModal(imageUrl, title, jobId = null) {
     const existing = document.querySelector('.modal-backdrop');
     if (existing) existing.remove();
     const existingModal = document.querySelector('.modal');
@@ -801,7 +933,7 @@ function showPreviewModal(imageUrl, title) {
         </div>
         <img src="${imageUrl}" alt="${title}" class="preview-modal-img">
         <div class="preview-modal-actions">
-            <a href="${imageUrl}" download class="btn btn-primary">${ICONS.download} Download PNG</a>
+            <button class="btn btn-primary" onclick='window.__downloadAsset(${JSON.stringify(imageUrl)}, ${JSON.stringify(title)}, event, ${jobId ?? "null"})'>${ICONS.download} Export PNG</button>
             <button class="btn btn-secondary" onclick="window.__closeModal()">Close</button>
         </div>
     `;
@@ -820,9 +952,131 @@ function closeModal() {
 // ============================================================
 // Utility
 // ============================================================
+function getTemplateMeta(templateKey) {
+    return TEMPLATE_LIBRARY[templateKey] || TEMPLATE_LIBRARY.tips;
+}
+
+function getPresetMeta(presetKey) {
+    return EXPORT_PRESETS[presetKey] || EXPORT_PRESETS.instagram_carousel;
+}
+
+function saveAnalytics(analytics) {
+    localStorage.setItem(ANALYTICS_STORAGE_KEY, JSON.stringify(analytics));
+}
+
+function trackAnalytics(eventName, payload = {}) {
+    const nextAnalytics = {
+        ...store.state.analytics,
+        events: [
+            ...(store.state.analytics?.events || []).slice(-59),
+            { name: eventName, payload, at: new Date().toISOString() },
+        ],
+        counters: {
+            ...(store.state.analytics?.counters || {}),
+            [eventName]: ((store.state.analytics?.counters || {})[eventName] || 0) + 1,
+        },
+    };
+    saveAnalytics(nextAnalytics);
+    store.setState({ analytics: nextAnalytics });
+}
+
+function rememberBrandKit(brandKit) {
+    localStorage.setItem(BRAND_KIT_STORAGE_KEY, JSON.stringify(brandKit));
+    store.setState({ brandKit });
+}
+
+function getGrowthMetrics() {
+    const counters = store.state.analytics?.counters || {};
+    return {
+        exports: counters.export_clicked || 0,
+        successfulGenerations: counters.generate_success || 0,
+        templateUses: counters.template_used || 0,
+        repeatUsage: counters.return_7d || 0,
+        refinements: counters.refine_used || 0,
+    };
+}
+
+function getJobImageUrls(job) {
+    if (!job) return [];
+    if (Array.isArray(job.result_urls) && job.result_urls.length > 0) {
+        return job.result_urls;
+    }
+    if (typeof job.result_url === 'string' && job.result_url) {
+        return [job.result_url];
+    }
+    return [];
+}
+
 function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+function buildGenerationTopic(topic, templateKey) {
+    return topic.trim();
+}
+
+function buildGenerationOptions(sourceJobId = null) {
+    return {
+        templateKey: store.state.templateKey,
+        exportPreset: store.state.exportPreset,
+        generationMode: store.state.generationMode || 'creative',
+        sourceJobId,
+        brandKit: {
+            ...store.state.brandKit,
+            social_handle: store.state.brandKit.social_handle || store.state.user?.social_handle || '',
+            brand_name: store.state.brandKit.brand_name || store.state.user?.full_name || '',
+        },
+    };
+}
+
+async function downloadAsset(url, topic, event, jobId = null) {
+    if (event) {
+        event.stopPropagation();
+    }
+    const preset = getPresetMeta(store.state.exportPreset);
+    let finalUrl = url;
+    let filename = null;
+    if (jobId) {
+        try {
+            const exportPackage = await api.getExportPackage(jobId);
+            if (exportPackage?.url) {
+                finalUrl = exportPackage.url;
+            }
+            if (exportPackage?.filename) {
+                filename = exportPackage.filename;
+            }
+        } catch (err) {
+            showToast(`Preset export fallback: ${err.message}`, 'warning');
+        }
+    }
+    const safeTopic = (topic || 'vibegraphic')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+    const anchor = document.createElement('a');
+    anchor.href = finalUrl;
+    anchor.download = filename || `${safeTopic || 'vibegraphic'}-${preset.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    trackAnalytics('export_clicked', { preset: store.state.exportPreset, topic, jobId });
+}
+
+function loadJobIntoDraft(job) {
+    if (!job) return;
+    const metadata = job.metadata_json || {};
+    store.setState({
+        currentJob: job,
+        draftTopic: job.topic,
+        audience: job.audience || store.state.audience,
+        format: job.format || store.state.format,
+        tone: job.tone || store.state.tone,
+        exportPreset: metadata.export_preset || store.state.exportPreset,
+        templateKey: metadata.template_key || store.state.templateKey,
+        generationMode: metadata.generation_mode || store.state.generationMode || 'creative',
+    });
+    router.navigate('#/generate');
 }
 
 // ============================================================
@@ -838,8 +1092,20 @@ window.__logout = () => {
     router.navigate('#/');
 };
 
-window.__previewImage = (url, title) => showPreviewModal(url, title);
+window.__previewImage = (url, title, jobId = null) => showPreviewModal(url, title, jobId);
 window.__closeModal = closeModal;
+window.__downloadAsset = (url, topic, event, jobId = null) => downloadAsset(url, topic, event, jobId);
+window.__previewJob = (jobId) => {
+    const job = store.getJob(jobId);
+    const imageUrls = getJobImageUrls(job);
+    if (job && imageUrls.length > 0) {
+        if (imageUrls.length > 1) {
+            loadJobIntoDraft(job);
+            return;
+        }
+        showPreviewModal(imageUrls[0], job.topic, job.id);
+    }
+};
 
 window.__setMode = (mode) => {
     currentMode = mode;
@@ -858,8 +1124,13 @@ window.__setMode = (mode) => {
 
 window.__viewJob = (jobId) => {
     const job = store.getJob(jobId);
-    if (job && job.status === 'completed' && job.result_url) {
-        showPreviewModal(job.result_url, job.topic);
+    const imageUrls = getJobImageUrls(job);
+    if (job && job.status === 'completed' && imageUrls.length > 0) {
+        if (imageUrls.length > 1) {
+            loadJobIntoDraft(job);
+            return;
+        }
+        showPreviewModal(imageUrls[0], job.topic, job.id);
     }
 };
 
@@ -870,6 +1141,26 @@ window.__setAudience = (audience) => {
 
 window.__setFormat = (format) => {
     store.setState({ format });
+    router._resolve();
+};
+
+window.__setExportPreset = (presetKey) => {
+    const preset = getPresetMeta(presetKey);
+    store.setState({
+        exportPreset: presetKey,
+        format: preset.format,
+    });
+    router._resolve();
+};
+
+window.__setTemplate = (templateKey) => {
+    store.setState({ templateKey });
+    trackAnalytics('template_used', { templateKey });
+    router._resolve();
+};
+
+window.__setGenerationMode = (generationMode) => {
+    store.setState({ generationMode });
     router._resolve();
 };
 
@@ -885,25 +1176,39 @@ window.__quickGenerate = () => {
 
 window.__viewCarousel = (jobId) => {
     const job = store.getJob(jobId);
-    if (job && job.status === 'completed' && job.result_url) {
-        store.setState({ currentJob: job });
-        router.navigate('#/generate');
+    if (job && job.status === 'completed' && getJobImageUrls(job).length > 0) {
+        loadJobIntoDraft(job);
     }
 };
 
-async function handleGenerate(topic) {
+window.__reuseJob = (jobId) => {
+    const job = store.getJob(jobId);
+    if (!job) return;
+    loadJobIntoDraft(job);
+    showToast('Loaded into remix workflow', 'info');
+};
+
+async function handleGenerate(topic, sourceJobId = null) {
     if (!topic || !topic.trim()) {
         showToast('Please enter a topic', 'warning');
         return;
     }
 
     try {
-        const { audience, format } = store.state;
+        const { audience, format, tone } = store.state;
+        const enrichedTopic = buildGenerationTopic(topic, store.state.templateKey);
+        const options = buildGenerationOptions(sourceJobId);
         const fn = currentMode === 'article' ? api.articleToInfographic.bind(api) : api.generateInfographic.bind(api);
-        const job = await fn(topic.trim(), audience, format);
+        trackAnalytics('generate_start', {
+            templateKey: store.state.templateKey,
+            exportPreset: store.state.exportPreset,
+            format,
+            generationMode: store.state.generationMode,
+        });
+        const job = await fn(enrichedTopic, audience, format, tone, options);
 
         store.addJob(job);
-        store.setState({ currentJob: job });
+        store.setState({ currentJob: job, draftTopic: topic.trim() });
 
         showToast(`Job #${job.id} submitted! Generating ${format}...`, 'success');
 
@@ -939,6 +1244,11 @@ function startPolling(jobId) {
                 delete pollingIntervals[jobId];
 
                 if (status.status === 'completed') {
+                    trackAnalytics('generate_success', {
+                        format: status.format || store.state.format,
+                        exportPreset: status.metadata_json?.export_preset || store.state.exportPreset,
+                        generationMode: status.metadata_json?.generation_mode || store.state.generationMode,
+                    });
                     showToast('🎉 Infographic is ready!', 'success');
                 } else {
                     showToast('Generation failed: ' + (status.error_message || 'Unknown error'), 'error');
@@ -1072,6 +1382,10 @@ document.addEventListener('input', (e) => {
             item.style.display = topic.includes(query) ? '' : 'none';
         });
     }
+
+    if (e.target.id === 'gen-topic-input') {
+        store.setState({ draftTopic: e.target.value });
+    }
 });
 
 // Navbar scroll effect
@@ -1093,11 +1407,44 @@ router.register('/generate', () => renderGenerate(), { requireAuth: true });
 router.register('/gallery', () => renderGallery(), { requireAuth: true });
 router.register('/settings', () => renderSettings(), { requireAuth: true });
 
+const lastActiveAt = store.state.analytics?.last_active_at;
+if (lastActiveAt) {
+    const diffMs = Date.now() - new Date(lastActiveAt).getTime();
+    if (diffMs > 12 * 60 * 60 * 1000 && diffMs <= 7 * 24 * 60 * 60 * 1000) {
+        trackAnalytics('return_7d');
+    }
+}
+saveAnalytics({
+    ...(store.state.analytics || {}),
+    last_active_at: new Date().toISOString(),
+    events: store.state.analytics?.events || [],
+    counters: store.state.analytics?.counters || {},
+});
+store.setState({
+    analytics: {
+        ...(store.state.analytics || {}),
+        last_active_at: new Date().toISOString(),
+        events: store.state.analytics?.events || [],
+        counters: store.state.analytics?.counters || {},
+    },
+});
+
 // Start app
 const appEl = document.getElementById('app');
 if (api.isAuthenticated) {
-    api.getProfile().then(user => {
-        store.setState({ user, socialHandle: user.social_handle });
+    Promise.all([api.getProfile(), api.getGallery().catch(() => [])]).then(([user, jobs]) => {
+        const brandKit = {
+            ...store.state.brandKit,
+            brand_name: store.state.brandKit.brand_name || user.full_name || '',
+            social_handle: store.state.brandKit.social_handle || user.social_handle || '',
+        };
+        rememberBrandKit(brandKit);
+        store.setState({ user, socialHandle: user.social_handle, jobs, brandKit });
+        jobs.forEach(job => {
+            if (job.status === 'pending' || job.status === 'processing') {
+                startPolling(job.id);
+            }
+        });
         router.start(appEl);
     }).catch(() => {
         router.start(appEl);
@@ -1131,6 +1478,7 @@ window.__refineContent = async () => {
     if (!instruction) return;
 
     showToast("Refining content with AI...", "info");
+    trackAnalytics('refine_used', { jobId: currentJob.id });
     
     try {
         const refinedData = await api.refineContent(
@@ -1144,13 +1492,22 @@ window.__refineContent = async () => {
             
             const renderJob = await api.renderContent(
                 refinedData,
-                store.state.format === 'carousel'
+                store.state.format === 'carousel',
+                store.state.exportPreset,
+                store.state.generationMode
             );
 
-            store.setState({ currentJob: renderJob });
+            const imageUrls = renderJob.urls || (renderJob.url ? [renderJob.url] : []);
+            const updatedJob = {
+                ...currentJob,
+                data: refinedData,
+                result_url: imageUrls[0] || currentJob.result_url,
+                result_urls: imageUrls,
+            };
+            store.updateJob(currentJob.id, updatedJob);
+            store.setState({ currentJob: updatedJob });
             showToast("Visual updated! 🎉", "success");
             router._resolve();
-            startPolling(renderJob.id);
         }
     } catch (err) {
         showToast("Refinement failed: " + err.message, "error");
@@ -1162,14 +1519,23 @@ window.__refineContent = async () => {
 // ============================================================
 
 window.__updateBranding = async () => {
-    const handle = document.getElementById('setting-social-handle')?.value;
-    if (!handle) return;
+    const handle = document.getElementById('setting-social-handle')?.value || '';
+    const fullName = document.getElementById('setting-full-name')?.value || '';
+    const brandKit = {
+        brand_name: document.getElementById('setting-brand-name')?.value || fullName,
+        social_handle: handle,
+        primary_color: document.getElementById('setting-primary-color')?.value || '#3b82f6',
+        accent_color: document.getElementById('setting-accent-color')?.value || '#8b5cf6',
+        cta_text: document.getElementById('setting-cta-text')?.value || 'Follow for more creator-ready visuals',
+        logo_url: document.getElementById('setting-logo-url')?.value || '',
+    };
 
     showToast("Updating branding profile...", "info");
     try {
-        const user = await api.put('/auth/me', { social_handle: handle });
+        const user = await api.put('/auth/me', { social_handle: handle, full_name: fullName });
         if (user) {
-            store.setState({ user, socialHandle: user.social_handle });
+            rememberBrandKit(brandKit);
+            store.setState({ user, socialHandle: user.social_handle, brandKit });
             showToast("Settings saved!", "success");
         }
     } catch (err) {
@@ -1202,15 +1568,18 @@ window.__reRenderWithTuning = async () => {
     
     showToast("Re-rendering with your tweaks...", "info");
     try {
-        const renderResponse = await api.post('/render', {
+        const renderResponse = await api.renderContent(
             data,
-            is_carousel: store.state.format === 'carousel'
-        });
+            store.state.format === 'carousel',
+            store.state.exportPreset,
+            store.state.generationMode
+        );
 
         if (renderResponse) {
             const imageUrls = renderResponse.urls || [renderResponse.url];
             store.updateJob(currentJob.id, { 
-                result_url: JSON.stringify(imageUrls)
+                result_url: imageUrls[0] || null,
+                result_urls: imageUrls
             });
             showToast("Visual updated!", "success");
         }
@@ -1224,6 +1593,7 @@ window.__reRenderWithTuning = async () => {
 // ============================================================
 function renderSettings() {
     const user = store.state.user;
+    const brandKit = store.state.brandKit || {};
     return `
     ${renderNavbar(true)}
     <div class="container page-transition">
@@ -1254,6 +1624,38 @@ function renderSettings() {
                 <input type="text" class="form-input" id="setting-full-name" 
                        placeholder="Full Name / Brand Name" 
                        value="${user?.full_name || ''}">
+            </div>
+
+            <div class="settings-group">
+                <label class="settings-label">Brand Kit Name</label>
+                <input type="text" class="form-input" id="setting-brand-name" 
+                       placeholder="Brand shown in creator workflows" 
+                       value="${brandKit.brand_name || user?.full_name || ''}">
+            </div>
+
+            <div class="settings-group settings-grid">
+                <div>
+                    <label class="settings-label">Primary Color</label>
+                    <input type="color" class="form-input color-input" id="setting-primary-color" value="${brandKit.primary_color || '#3b82f6'}">
+                </div>
+                <div>
+                    <label class="settings-label">Accent Color</label>
+                    <input type="color" class="form-input color-input" id="setting-accent-color" value="${brandKit.accent_color || '#8b5cf6'}">
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <label class="settings-label">Default CTA</label>
+                <input type="text" class="form-input" id="setting-cta-text" 
+                       placeholder="Follow for more creator-ready visuals" 
+                       value="${brandKit.cta_text || 'Follow for more creator-ready visuals'}">
+            </div>
+
+            <div class="settings-group">
+                <label class="settings-label">Logo URL</label>
+                <input type="url" class="form-input" id="setting-logo-url" 
+                       placeholder="https://example.com/logo.png" 
+                       value="${brandKit.logo_url || ''}">
             </div>
 
             <div style="margin-top:var(--space-10); display:flex; gap:var(--space-4);">

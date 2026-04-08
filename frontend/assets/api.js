@@ -5,6 +5,45 @@
 
 const API_BASE = '/api/v1';
 
+function normalizeJob(job) {
+    if (!job || typeof job !== 'object') {
+        return job;
+    }
+
+    let resultUrls = [];
+    const rawResult = job.result_url;
+
+    if (Array.isArray(rawResult)) {
+        resultUrls = rawResult.filter(Boolean);
+    } else if (typeof rawResult === 'string' && rawResult.trim()) {
+        try {
+            const parsed = JSON.parse(rawResult);
+            resultUrls = Array.isArray(parsed) ? parsed.filter(Boolean) : [rawResult];
+        } catch {
+            resultUrls = [rawResult];
+        }
+    }
+
+    return {
+        ...job,
+        data: job.data ?? job.metadata_json?.structured_content ?? job.metadata_json ?? null,
+        result_url: resultUrls[0] ?? null,
+        result_urls: resultUrls,
+    };
+}
+
+function normalizeResponse(data) {
+    if (Array.isArray(data)) {
+        return data.map(normalizeJob);
+    }
+
+    if (data && typeof data === 'object' && 'id' in data && 'status' in data) {
+        return normalizeJob(data);
+    }
+
+    return data;
+}
+
 class ApiClient {
     constructor() {
         this._token = localStorage.getItem('vg_token') || null;
@@ -63,7 +102,20 @@ class ApiClient {
             throw new Error(errorData.detail || `Request failed (${response.status})`);
         }
 
-        return response.json();
+        const data = await response.json();
+        return normalizeResponse(data);
+    }
+
+    async get(path) {
+        return this._request('GET', path);
+    }
+
+    async post(path, body = null) {
+        return this._request('POST', path, body);
+    }
+
+    async put(path, body = null) {
+        return this._request('PUT', path, body);
     }
 
     // --- Auth ---
@@ -85,20 +137,41 @@ class ApiClient {
     }
 
     // --- Infographics ---
-    async generateInfographic(topic, audience = 'general', format = 'infographic') {
+    async generateInfographic(topic, audience = 'general', format = 'infographic', tone = 'Educational', options = {}) {
         return this._request('POST', '/infographics/generate', { 
             topic, 
             audience, 
-            format 
+            format,
+            tone,
+            template_key: options.templateKey || null,
+            export_preset: options.exportPreset || null,
+            source_job_id: options.sourceJobId || null,
+            brand_kit: options.brandKit || null,
+            generation_mode: options.generationMode || 'creative',
         });
     }
 
-    async renderContent(data, isCarousel = false) {
-        return this._request('POST', '/infographics/render', { data, is_carousel: isCarousel });
+    async renderContent(data, isCarousel = false, exportPreset = null, generationMode = 'creative') {
+        return this._request('POST', '/infographics/render', {
+            data,
+            is_carousel: isCarousel,
+            export_preset: exportPreset,
+            generation_mode: generationMode,
+        });
     }
 
-    async articleToInfographic(topic) {
-        return this._request('POST', '/infographics/article-to-infographic', { topic });
+    async articleToInfographic(topic, audience = 'general', format = 'infographic', tone = 'Educational', options = {}) {
+        return this._request('POST', '/infographics/generate', {
+            topic,
+            audience,
+            format,
+            tone,
+            template_key: options.templateKey || null,
+            export_preset: options.exportPreset || null,
+            source_job_id: options.sourceJobId || null,
+            brand_kit: options.brandKit || null,
+            generation_mode: options.generationMode || 'creative',
+        });
     }
 
     async getJobStatus(jobId) {
@@ -107,6 +180,14 @@ class ApiClient {
 
     async getDownloadUrl(jobId) {
         return this._request('GET', `/infographics/download/${jobId}`);
+    }
+
+    async getExportPackage(jobId) {
+        return this._request('GET', `/infographics/export/${jobId}`);
+    }
+
+    async getGallery() {
+        return this._request('GET', '/infographics/gallery');
     }
 
     async editInfographic(jobId, data) {

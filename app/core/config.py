@@ -41,10 +41,12 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    INLINE_JOB_EXECUTION: bool = False
 
     # LLM APIs
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
+    ALLOW_MOCK_FALLBACK_ON_AI_ERROR: bool = True
 
     # Google Cloud Storage
     GS_BUCKET_NAME: str = ""

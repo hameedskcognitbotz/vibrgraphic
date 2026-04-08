@@ -8,22 +8,32 @@ logger = logging.getLogger(__name__)
 class StorageService:
     def __init__(self):
         self.bucket_name = settings.GS_BUCKET_NAME
-        if settings.GCP_SERVICE_ACCOUNT_JSON:
-            # Check if it's a file path or a string
-            if os.path.exists(settings.GCP_SERVICE_ACCOUNT_JSON):
-                self.client = storage.Client.from_service_account_json(settings.GCP_SERVICE_ACCOUNT_JSON)
+        self.client = None
+
+        # Skip client initialization when storage is not configured.
+        if not self.bucket_name:
+            return
+
+        try:
+            if settings.GCP_SERVICE_ACCOUNT_JSON:
+                # Check if it's a file path or a string
+                if os.path.exists(settings.GCP_SERVICE_ACCOUNT_JSON):
+                    self.client = storage.Client.from_service_account_json(settings.GCP_SERVICE_ACCOUNT_JSON)
+                else:
+                    # Assume it's a JSON string
+                    import json
+                    service_account_info = json.loads(settings.GCP_SERVICE_ACCOUNT_JSON)
+                    self.client = storage.Client.from_service_account_info(service_account_info)
             else:
-                # Assume it's a JSON string
-                import json
-                service_account_info = json.loads(settings.GCP_SERVICE_ACCOUNT_JSON)
-                self.client = storage.Client.from_service_account_info(service_account_info)
-        else:
-            # Try default credentials
-            self.client = storage.Client(project=settings.GCP_PROJECT_ID)
+                # Try default credentials
+                self.client = storage.Client(project=settings.GCP_PROJECT_ID)
+        except Exception as e:
+            logger.warning(f"GCS client initialization failed, local storage fallback will be used: {e}")
+            self.client = None
 
     async def upload_file(self, content: bytes, destination_blob_name: str, content_type: str = "image/png") -> str:
         """Uploads a file to the bucket and returns the public URL."""
-        if not self.bucket_name:
+        if not self.bucket_name or self.client is None:
             logger.warning("GS_BUCKET_NAME not configured, skipping GCS upload.")
             return ""
             

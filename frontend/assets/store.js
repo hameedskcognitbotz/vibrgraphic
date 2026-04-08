@@ -4,15 +4,34 @@
 
 class Store {
     constructor() {
+        const persistedBrandKit = this._readJson('vg_brand_kit', {
+            brand_name: '',
+            social_handle: '',
+            primary_color: '#3b82f6',
+            accent_color: '#8b5cf6',
+            cta_text: 'Follow for more creator-ready visuals',
+            logo_url: '',
+        });
+        const persistedAnalytics = this._readJson('vg_analytics', {
+            events: [],
+            counters: {},
+            last_active_at: null,
+        });
         this._state = {
             user: null,
             jobs: [],
             currentJob: null,
             pollingJobs: new Set(),
             audience: 'general',
-            format: 'infographic',
+            format: 'carousel',
             tone: 'Educational',
             socialHandle: '',
+            exportPreset: 'instagram_carousel',
+            templateKey: 'tips',
+            generationMode: 'creative',
+            brandKit: persistedBrandKit,
+            analytics: persistedAnalytics,
+            draftTopic: '',
         };
         this._listeners = [];
     }
@@ -52,6 +71,15 @@ class Store {
 
     getJob(jobId) {
         return this._state.jobs.find(j => j.id === jobId);
+    }
+
+    _readJson(key, fallback) {
+        try {
+            const value = localStorage.getItem(key);
+            return value ? JSON.parse(value) : fallback;
+        } catch {
+            return fallback;
+        }
     }
 }
 
