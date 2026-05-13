@@ -3,7 +3,7 @@ import logging
 import textwrap
 import random
 import os
-from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps, ImageEnhance
 from google import genai
 from google.genai import types
 from app.core.config import settings
@@ -44,30 +44,93 @@ def get_font(size: int, is_bold: bool = False, family: str = "Inter"):
     except IOError:
         return ImageFont.load_default()
 
-def draw_glass_card(draw, rect, fill_alpha=40, outline_alpha=80, radius=20):
-    """Draws a premium semi-transparent card (Glassmorphism)."""
-    # Create temp layer for transparency
-    mask = Image.new("RGBA", (int(rect[2]-rect[0]), int(rect[3]-rect[1])), (0,0,0,0))
+def draw_aurora_gradient(width, height, dominant_colors):
+    """
+    Creates a modern 'Mesh Gradient' effect using overlapping radial blobs.
+    """
+    # Use a very deep, rich slate as the base
+    base = Image.new("RGBA", (width, height), (7, 7, 14, 255)) 
+    overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    
+    # Draw 4-6 large blurred color blobs (Auroras)
+    for color_hex in dominant_colors[:6]:
+        try:
+            rgb = hex_to_rgb(color_hex)
+        except:
+            rgb = (37, 99, 235) # Fallback blue
+            
+        blob_size = random.randint(int(width*0.9), int(width*1.6))
+        blob = Image.new("RGBA", (blob_size, blob_size), (0, 0, 0, 0))
+        d = ImageDraw.Draw(blob)
+        
+        # Draw radial gradient in the blob
+        for r in range(blob_size // 2, 0, -10):
+            alpha = int(35 * (1 - (r / (blob_size // 2))))
+            d.ellipse([blob_size//2 - r, blob_size//2 - r, blob_size//2 + r, blob_size//2 + r], 
+                       fill=(rgb[0], rgb[1], rgb[2], alpha))
+        
+        blob = blob.filter(ImageFilter.GaussianBlur(radius=120))
+        x = random.randint(-blob_size//2, width - blob_size//2)
+        y = random.randint(-blob_size//2, height - blob_size//2)
+        overlay.paste(blob, (x, y), blob)
+    
+    return Image.alpha_composite(base, overlay)
+
+def apply_frosted_glass_blur(bg_img, rect, radius=45, blur_radius=30, brightness=1.18):
+    """
+    Crops the background, blurs it, and pastes it back with a tint to create a real frosted glass effect.
+    """
+    rect = [int(r) for r in rect]
+    # 1. Crop the area from background
+    crop = bg_img.crop(rect).convert("RGBA")
+    
+    # 2. Apply heavy blur
+    blurred = crop.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+    
+    # 3. Enhance brightness for that 'lit from behind' look
+    enhancer = ImageEnhance.Brightness(blurred)
+    blurred = enhancer.enhance(brightness)
+    
+    # 4. Add a white 'frost' tint + subtle highlight
+    frost = Image.new("RGBA", blurred.size, (255, 255, 255, 18))
+    blurred = Image.alpha_composite(blurred, frost)
+    
+    # 5. Create the card mask with rounded corners
+    mask = Image.new("L", blurred.size, 0)
     d = ImageDraw.Draw(mask)
-    d.rounded_rectangle([0, 0, rect[2]-rect[0], rect[3]-rect[1]], radius=radius, 
-                       fill=(255, 255, 255, fill_alpha), 
-                       outline=(255, 255, 255, outline_alpha), width=2)
-    return mask
+    d.rounded_rectangle([0, 0, blurred.size[0], blurred.size[1]], radius=radius, fill=255)
+    
+    # 6. Final composite
+    card = Image.new("RGBA", blurred.size, (0,0,0,0))
+    card.paste(blurred, (0,0), mask=mask)
+    
+    # 7. Add double border (glow + sharp line)
+    d_card = ImageDraw.Draw(card)
+    d_card.rounded_rectangle([0, 0, blurred.size[0], blurred.size[1]], radius=radius, 
+                            outline=(255, 255, 255, 30), width=4)
+    d_card.rounded_rectangle([0, 0, blurred.size[0], blurred.size[1]], radius=radius, 
+                            outline=(255, 255, 255, 60), width=1)
+    
+    return card
+
+def add_film_grain(img, intensity=0.045):
+    """Adds a professional film grain texture."""
+    width, height = img.size
+    noise = Image.effect_noise((width // 2, height // 2), 30)
+    noise = noise.resize((width, height), Image.Resampling.NEAREST).convert("RGBA")
+    alpha_mask = noise.split()[0].point(lambda p: int(p * intensity))
+    noise.putalpha(alpha_mask)
+    return Image.alpha_composite(img, noise)
 
 def get_dominant_color(img):
     """Extracts dominant color for syncing design elements."""
-    # Resize to 1x1 to get average color
     small_img = img.copy().resize((1, 1), Image.Resampling.LANCZOS)
     return small_img.getpixel((0, 0))
 
-def apply_drop_shadow(img, offset=(10, 10), background_color=(0,0,0,0), blur_radius=15, shadow_alpha=120):
+def apply_drop_shadow(img, offset=(15, 15), blur_radius=30, shadow_alpha=160):
     """Creates a high-end floating effect for illustrations."""
-    shadow = Image.new("RGBA", (img.width + offset[0] + blur_radius*2, img.height + offset[1] + blur_radius*2), (0,0,0,0))
-    # Extract alpha mask of the image
+    shadow = Image.new("RGBA", (img.width + abs(offset[0]) + blur_radius*2, img.height + abs(offset[1]) + blur_radius*2), (0,0,0,0))
     alpha = img.getchannel('A')
-    shadow_mask = Image.new("L", img.size, shadow_alpha)
-    shadow_img = Image.merge("RGBA", (Image.new("L", img.size, 0), Image.new("L", img.size, 0), Image.new("L", img.size, 0), alpha))
-    
     shadow.paste((0, 0, 0, shadow_alpha), (blur_radius, blur_radius), mask=alpha)
     shadow = shadow.filter(ImageFilter.GaussianBlur(radius=blur_radius))
     
@@ -78,10 +141,8 @@ def apply_drop_shadow(img, offset=(10, 10), background_color=(0,0,0,0), blur_rad
 
 def _get_image_client() -> genai.Client | None:
     global _image_client
-    if _image_client is not None:
-        return _image_client
-    if not settings.GEMINI_API_KEY:
-        return None
+    if _image_client is not None: return _image_client
+    if not settings.GEMINI_API_KEY: return None
     try:
         _image_client = genai.Client(api_key=settings.GEMINI_API_KEY)
         return _image_client
@@ -91,14 +152,10 @@ def _get_image_client() -> genai.Client | None:
 
 def _aspect_ratio(width: int, height: int) -> str:
     ratio = width / height if height else 1
-    if abs(ratio - 1.0) < 0.05:
-        return "1:1"
-    if abs(ratio - 4 / 5) < 0.05:
-        return "4:5"
-    if abs(ratio - 9 / 16) < 0.05:
-        return "9:16"
-    if abs(ratio - 16 / 9) < 0.05:
-        return "16:9"
+    if abs(ratio - 1.0) < 0.05: return "1:1"
+    if abs(ratio - 4 / 5) < 0.05: return "4:5"
+    if abs(ratio - 9 / 16) < 0.05: return "9:16"
+    if abs(ratio - 16 / 9) < 0.05: return "16:9"
     return "1:1"
 
 def _extract_image_bytes(response: types.GenerateContentResponse) -> bytes | None:
@@ -107,15 +164,11 @@ def _extract_image_bytes(response: types.GenerateContentResponse) -> bytes | Non
         for candidate in response.candidates:
             content = getattr(candidate, "content", None)
             candidate_parts = getattr(content, "parts", None) if content else None
-            if candidate_parts:
-                parts.extend(candidate_parts)
-    if not parts and getattr(response, "parts", None):
-        parts.extend(response.parts)
-
+            if candidate_parts: parts.extend(candidate_parts)
+    if not parts and getattr(response, "parts", None): parts.extend(response.parts)
     for part in parts:
         inline_data = getattr(part, "inline_data", None)
-        if inline_data and getattr(inline_data, "data", None):
-            return inline_data.data
+        if inline_data and getattr(inline_data, "data", None): return inline_data.data
     return None
 
 def _placeholder_image(width: int, height: int) -> Image.Image:
@@ -123,33 +176,27 @@ def _placeholder_image(width: int, height: int) -> Image.Image:
 
 def _generate_gemini_image(prompt: str, width: int, height: int, generation_mode: str = "creative") -> Image.Image:
     client = _get_image_client()
-    if client is None:
-        return _placeholder_image(width, height)
-
+    if client is None: return _placeholder_image(width, height)
     try:
         response = client.models.generate_content(
             model="gemini-3-pro-image-preview",
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_modalities=[types.Modality.IMAGE],
-                image_config=types.ImageConfig(
-                    aspectRatio=_aspect_ratio(width, height),
-                ),
+                image_config=types.ImageConfig(aspectRatio=_aspect_ratio(width, height)),
                 tools=[types.Tool(google_search=types.GoogleSearch())] if generation_mode == "grounded" else None,
             ),
         )
         image_bytes = _extract_image_bytes(response)
-        if not image_bytes:
-            return _placeholder_image(width, height)
+        if not image_bytes: return _placeholder_image(width, height)
         img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
         return ImageOps.fit(img, (width, height), Image.Resampling.LANCZOS)
     except Exception as err:
-        logger.warning(f"Gemini image generation failed, using placeholder: {err}")
+        logger.warning(f"Gemini image generation failed: {err}")
         return _placeholder_image(width, height)
 
 def get_preset_spec(export_preset: str | None, is_carousel: bool) -> dict:
-    if export_preset in PRESET_SPECS:
-        return PRESET_SPECS[export_preset]
+    if export_preset in PRESET_SPECS: return PRESET_SPECS[export_preset]
     return {"width": 1080, "height": 1080} if is_carousel else {"width": 1300, "height": 1800}
 
 def _fit_to_canvas(img: Image.Image, target_width: int, target_height: int, bg_color: tuple[int, int, int]) -> Image.Image:
@@ -159,295 +206,173 @@ def _fit_to_canvas(img: Image.Image, target_width: int, target_height: int, bg_c
     canvas.paste(fitted, offset)
     return canvas
 
-def render_image(
-    layout_data: dict,
-    export_preset: str | None = None,
-    generation_mode: str = "creative",
-) -> bytes:
-    """
-    Renders a stunning, premium infographic via Pillow.
-    Features: Typography bundling, Glassmorphism, Drop Shadows, and Smart Scaling.
-    """
-    logger.info("Rendering premium layout with Z-axis depth effects...")
+def render_image(layout_data: dict, export_preset: str | None = None, generation_mode: str = "creative") -> bytes:
+    logger.info("Rendering ultra-premium infographic with Aurora gradients and frosted glass...")
     
     title = layout_data.get("title", "Infographic Title").upper()
     sections = layout_data.get("sections", [])
     theme = layout_data.get("theme", {})
+    handle = layout_data.get("author_handle", "@VibeGraphic")
     
-    # Fonts (Montserrat for titles, Inter for body)
-    title_font = get_font(58, is_bold=True, family="Montserrat")
-    section_title_font = get_font(34, is_bold=True, family="Montserrat")
-    body_font = get_font(21, family="Inter")
-    point_font = get_font(21, is_bold=True, family="Inter")
-    footer_font = get_font(18, family="Inter")
+    title_font = get_font(72, is_bold=True, family="Montserrat")
+    section_title_font = get_font(40, is_bold=True, family="Montserrat")
+    body_font = get_font(24, family="Inter")
+    point_font = get_font(24, is_bold=True, family="Inter")
+    footer_font = get_font(22, family="Inter")
 
-    # Layout dimensions
     width = 1300 
-    margin_x = 80
+    margin_x = 90
     card_width = width - (margin_x * 2)
-    base_img_width = 400
-    base_img_height = 300
+    base_img_width, base_img_height = 460, 340
     
-    # Wrapped Title
-    wrapped_title = textwrap.wrap(title, width=32)
-    title_height = 120 + (len(wrapped_title) * 70)
-    
-    total_height = title_height
+    all_accent_colors = [theme.get("primary_color", "#3B82F6"), theme.get("secondary_color", "#8B5CF6")]
     wrapped_sections = []
+    total_height = 280 + (len(textwrap.wrap(title, width=32)) * 90)
     
-    def fetch_section_image(sec):
-        prompt = sec.get("illustration_prompt", "abstract technology")
-        mode_prompt = (
-            " factual, grounded in recent public information, realistic chart context,"
-            if generation_mode == "grounded"
-            else " stylized creative direction,"
-        )
-        img_prompt = (
-            f"{prompt}, premium infographic illustration,{mode_prompt}"
-            " clean typography zones, label-safe composition, high detail, no gibberish text"
-        )
+    for sec in sections:
+        prompt = sec.get("illustration_prompt", "abstract neon technology")
+        img_prompt = f"{prompt}, premium 3D isometric masterpiece, volumetric lighting, deep focus, label-safe, 8k resolution"
         sec_img = _generate_gemini_image(img_prompt, base_img_width, base_img_height, generation_mode)
-            
-        # 1. Round corners
+        
         mask = Image.new("L", sec_img.size, 0)
-        ImageDraw.Draw(mask).rounded_rectangle([0, 0, sec_img.width, sec_img.height], radius=30, fill=255)
+        ImageDraw.Draw(mask).rounded_rectangle([0, 0, sec_img.width, sec_img.height], radius=45, fill=255)
         rounded_img = Image.new("RGBA", sec_img.size, (0,0,0,0))
         rounded_img.paste(sec_img, (0,0), mask=mask)
         
-        # 2. Extract dominant color for sync
         dom_color = get_dominant_color(rounded_img)
+        all_accent_colors.append('#%02x%02x%02x' % dom_color[:3])
+        elevated_img = apply_drop_shadow(rounded_img, blur_radius=40, shadow_alpha=190)
         
-        # 3. Apply drop shadow
-        elevated_img = apply_drop_shadow(rounded_img)
-        return elevated_img, dom_color
-
-    image_results = [fetch_section_image(sec) for sec in sections]
-    
-    for sec, (elevated_img, dom_color) in zip(sections, image_results):
-        desc_wrap = textwrap.wrap(sec.get("description", ""), width=50)
-        points_wrap = []
-        for pt in sec.get("points", []):
-            points_wrap.append(textwrap.wrap(f"• {pt}", width=50))
-            
-        # Height estimation
-        summary_h = (len(desc_wrap) * 32) + sum(len(p)*30 for p in points_wrap) + (len(points_wrap)*8)
-        text_h = 60 + (len(textwrap.wrap(sec.get("heading", ""), width=45)) * 42) + summary_h + 80
-        sec_h = max(text_h, elevated_img.height + 60)
+        desc_wrap = textwrap.wrap(sec.get("description", ""), width=45)
+        points_wrap = [textwrap.wrap(f"• {pt}", width=45) for pt in sec.get("points", [])]
+        
+        text_h = 130 + (len(desc_wrap) * 38) + (sum(len(p) for p in points_wrap) * 36)
+        sec_h = max(text_h, elevated_img.height + 110)
         
         wrapped_sections.append({
-            "heading": textwrap.wrap(sec.get("heading", ""), width=45),
-            "description": desc_wrap,
-            "points": points_wrap,
-            "height": sec_h,
-            "image": elevated_img,
-            "accent_color": dom_color
+            "heading": textwrap.wrap(sec.get("heading", ""), width=40),
+            "description": desc_wrap, "points": points_wrap,
+            "height": sec_h, "image": elevated_img, "accent_color": dom_color
         })
-        total_height += sec_h + 60
-        
-    total_height += 180
+        total_height += sec_h + 100
     
-    img = Image.new('RGBA', (width, total_height), (30, 41, 59, 255))
-    draw = ImageDraw.Draw(img)
+    total_height += 200
+    bg = draw_aurora_gradient(width, total_height, all_accent_colors)
+    draw = ImageDraw.Draw(bg)
 
-    # 1. Gradient Background
-    bg_start = hex_to_rgb(theme.get("background_color", "#0F172A"))
-    bg_end = hex_to_rgb(theme.get("secondary_color", "#1E1B4B"))
-    # Efficient fill
-    for y in range(total_height):
-        r = bg_start[0] + (bg_end[0] - bg_start[0]) * y // total_height
-        g = bg_start[1] + (bg_end[1] - bg_start[1]) * y // total_height
-        b = bg_start[2] + (bg_end[2] - bg_start[2]) * y // total_height
-        draw.line([(0, y), (width, y)], fill=(r, g, b, 255))
+    curr_y = 140
+    for line in textwrap.wrap(title, width=32):
+        lw = draw.textbbox((0,0), line, font=title_font)[2]
+        draw.text(((width - lw)/2 + 4, curr_y + 4), line, fill=(0,0,0,150), font=title_font)
+        draw.text(((width - lw)/2, curr_y), line, fill="#FFFFFF", font=title_font)
+        curr_y += 95
+    curr_y += 80
 
-    # 2. Ambient Decorations
-    # Draw decoration on a separate RGBA overlay, then alpha-composite.
-    # This avoids alpha-drop artifacts when converting final output to RGB.
-    ambient = Image.new("RGBA", (width, total_height), (0, 0, 0, 0))
-    ambient_draw = ImageDraw.Draw(ambient)
-    for _ in range(15):
-        x, y = random.randint(0, width), random.randint(0, total_height)
-        s = random.randint(100, 400)
-        ambient_draw.ellipse([x, y, x + s, y + s], fill=(255, 255, 255, 10))
-    img = Image.alpha_composite(img, ambient)
-    draw = ImageDraw.Draw(img)
-
-    # 3. Draw Title
-    curr_y = 70
-    for line in wrapped_title:
-        lw, lh = draw.textsize(line, font=title_font) if hasattr(draw, 'textsize') else (draw.textbbox((0,0), line, font=title_font)[2], draw.textbbox((0,0), line, font=title_font)[3])
-        draw.text(((width - lw)/2, curr_y), line, fill="#F8FAFC", font=title_font)
-        curr_y += 75
-    curr_y += 40
-
-    # 4. Draw Glass Cards
     for idx, sec in enumerate(wrapped_sections):
         card_rect = [margin_x, curr_y, margin_x + card_width, curr_y + sec["height"]]
+        glass_card = apply_frosted_glass_blur(bg, card_rect, radius=50)
+        bg.paste(glass_card, (int(card_rect[0]), int(card_rect[1])), glass_card)
         
-        # Glass card creation
-        glass = draw_glass_card(img, card_rect)
-        img.paste(glass, (int(card_rect[0]), int(card_rect[1])), glass)
-        
-        # Layout alternation
         is_even = idx % 2 == 0
-        img_x = margin_x + 20 if is_even else margin_x + card_width - sec["image"].width - 20
-        text_x = margin_x + sec["image"].width + 60 if is_even else margin_x + 50
+        img_x = margin_x + 60 if is_even else margin_x + card_width - sec["image"].width - 60
+        text_x = margin_x + sec["image"].width + 100 if is_even else margin_x + 80
         
-        # Paste Image (Elevated)
-        img.paste(sec["image"], (int(img_x), int(curr_y + 30)), sec["image"])
+        bg.paste(sec["image"], (int(img_x), int(curr_y + 55)), sec["image"])
         
-        # Text Rendering
-        inner_y = curr_y + 50
-        # Color Sync - Accent Line
+        inner_y = curr_y + 80
         accent = sec["accent_color"]
-        draw.line([text_x, inner_y, text_x + 60, inner_y], fill=(accent[0], accent[1], accent[2], 255), width=6)
-        inner_y += 25
+        draw.line([text_x, inner_y, text_x + 100, inner_y], fill=(accent[0], accent[1], accent[2], 255), width=12)
+        inner_y += 60
         
         for line in sec["heading"]:
-            draw.text((text_x, inner_y), line, fill="#F1F5F9", font=section_title_font)
-            inner_y += 44
-        inner_y += 15
+            draw.text((text_x, inner_y), line, fill="#FFFFFF", font=section_title_font)
+            inner_y += 56
+        inner_y += 28
         
         for line in sec["description"]:
-            draw.text((text_x, inner_y), line, fill="#94A3B8", font=body_font)
-            inner_y += 32
-        inner_y += 20
+            draw.text((text_x, inner_y), line, fill="#CBD5E1", font=body_font)
+            inner_y += 38
+        inner_y += 35
         
         for lines in sec["points"]:
             first = True
             for line in lines:
                 prefix = "• " if first else "  "
-                draw.text((text_x, inner_y), f"{prefix}{line}", fill="#CBD5E1" if first else "#64748B", font=point_font if first else body_font)
-                inner_y += 30
+                draw.text((text_x, inner_y), f"{prefix}{line}", fill="#F8FAFC" if first else "#94A3B8", font=point_font if first else body_font)
+                inner_y += 36
                 first = False
-            inner_y += 10
+            inner_y += 18
             
-        curr_y += sec["height"] + 50
+        curr_y += sec["height"] + 100
 
-    # 5. Footer
-    handle = layout_data.get("author_handle", "@VibeGraphic")
-    brand_name = layout_data.get("brand_name", "VibeGraphic")
-    cta_text = layout_data.get("cta_text")
-    footer_txt = f"{brand_name} • {handle}"
-    if cta_text:
-        footer_txt = f"{footer_txt} • {cta_text}"
+    footer_txt = f"CREATED WITH VIBEGRAPHIC • {handle}"
     lw = draw.textbbox((0,0), footer_txt, font=footer_font)[2]
-    draw.text(((width - lw)/2, total_height - 100), footer_txt, fill="#475569", font=footer_font)
+    draw.text(((width - lw)/2, total_height - 100), footer_txt, fill="#94A3B8", font=footer_font)
 
-    final_img = img.convert('RGB')
-    preset_spec = get_preset_spec(export_preset, is_carousel=False)
+    final = add_film_grain(bg, intensity=0.05)
+    final = final.convert('RGB')
+    
     if export_preset:
-        final_img = _fit_to_canvas(final_img, preset_spec["width"], preset_spec["height"], bg_start)
+        spec = get_preset_spec(export_preset, False)
+        final = _fit_to_canvas(final, spec["width"], spec["height"], (10,10,18))
 
     buf = io.BytesIO()
-    final_img.save(buf, format='PNG', optimize=True)
+    final.save(buf, format='PNG', optimize=True)
     return buf.getvalue()
 
-def render_carousel(
-    carousel_data: dict,
-    width: int = 1080,
-    height: int = 1080,
-    export_preset: str | None = None,
-    generation_mode: str = "creative",
-) -> list[bytes]:
-    """
-    Renders a set of carousel slides (1080x1080) with premium typography and auto-scaling.
-    """
-    preset_spec = get_preset_spec(export_preset, is_carousel=True)
-    width = preset_spec["width"]
-    height = preset_spec["height"]
-    logger.info(f"Rendering premium carousel: {carousel_data.get('title')}")
-    slides = carousel_data.get("slides", [])
+def render_carousel(carousel_data: dict, width: int = 1080, height: int = 1080, export_preset: str | None = None, generation_mode: str = "creative") -> list[bytes]:
+    spec = get_preset_spec(export_preset, True)
+    width, height = spec["width"], spec["height"]
+    slides_data = carousel_data.get("slides", [])
     theme = carousel_data.get("theme", {})
-    bg_color_hex = theme.get("background_color", "#0F172A")
-    bg_color = hex_to_rgb(bg_color_hex)
-    primary_color = theme.get("primary_color", "#3B82F6")
+    accent_base = theme.get("primary_color", "#3B82F6")
     handle = carousel_data.get("author_handle", "@VibeGraphic")
-    brand_name = carousel_data.get("brand_name", "VibeGraphic")
-    cta_text = carousel_data.get("cta_text")
-
-    def fetch_slide_image(slide):
-        mode_prompt = (
-            " factual, grounded in recent public information, realistic context,"
-            if generation_mode == "grounded"
-            else " highly creative art direction,"
-        )
-        prompt = (
-            f"{slide.get('image_prompt')}, premium 3D isometric render,{mode_prompt}"
-            " isolated object, clean heading-safe negative space, high detail, no gibberish text"
-        )
-        img = _generate_gemini_image(prompt, 600, 600, generation_mode)
-        return apply_drop_shadow(img, blur_radius=20, shadow_alpha=100), get_dominant_color(img)
-
-    image_results = [fetch_slide_image(slide) for slide in slides]
+    
+    master_bg = draw_aurora_gradient(width, height, [accent_base, theme.get("secondary_color", "#8B5CF6")])
+    
     rendered_slides = []
-
-    for idx, (slide, (elevated_img, dom_color)) in enumerate(zip(slides, image_results)):
-        img = Image.new("RGBA", (width, height), color=(*bg_color, 255))
-
-        # 1. Background Decoration (alpha-safe overlay)
-        ambient = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        ambient_draw = ImageDraw.Draw(ambient)
-        ambient_draw.ellipse([width - 400, -200, width + 200, 400], fill=(255, 255, 255, 20))
-        ambient_draw.ellipse(
-            [-200, height - 400, 400, height + 200],
-            fill=(dom_color[0], dom_color[1], dom_color[2], 24),
-        )
-        img = Image.alpha_composite(img, ambient)
-        draw = ImageDraw.Draw(img)
+    for idx, slide in enumerate(slides_data):
+        slide_bg = master_bg.copy()
+        draw = ImageDraw.Draw(slide_bg)
         
-        # 2. Smart Scaling Title
+        img_prompt = f"{slide.get('image_prompt')}, premium 3D design asset, volumetric lighting, deep shadows"
+        illustration = _generate_gemini_image(img_prompt, 640, 640, generation_mode)
+        illustration = apply_drop_shadow(illustration, blur_radius=50, shadow_alpha=170)
+        
         title_text = slide.get("title", "").upper()
-        font_size = 72
+        font_size = 80
         title_font = get_font(font_size, is_bold=True, family="Montserrat")
-        
-        # Recursive shrink to fit
-        while font_size > 40:
-            wrapped = textwrap.wrap(title_text, width=int(20 * (72/font_size)))
-            th = len(wrapped) * (font_size + 10)
-            if th < 250: break
+        while font_size > 48:
+            wrapped = textwrap.wrap(title_text, width=int(18 * (80/font_size)))
+            if (len(wrapped) * (font_size + 20)) < 340: break
             font_size -= 4
             title_font = get_font(font_size, is_bold=True, family="Montserrat")
         
-        y = 100
-        for line in textwrap.wrap(title_text, width=int(22 * (72/font_size))):
-            draw.text((80, y), line, fill="#FFFFFF", font=title_font)
-            y += font_size + 10
+        cy = 120
+        for line in textwrap.wrap(title_text, width=int(22 * (80/font_size))):
+            draw.text((100, cy), line, fill="#FFFFFF", font=title_font)
+            cy += font_size + 20
         
-        # 3. Illustration (Elevated)
-        inner_img = elevated_img.resize((560, 560)) if elevated_img.width > 600 else elevated_img
-        img.paste(inner_img, (int((width - inner_img.width)/2), y + 20), inner_img)
-        y += inner_img.height + 40
+        scale = min(1.0, (height - cy - 380) / illustration.height)
+        if scale < 1.0:
+            illustration = illustration.resize((int(illustration.width * scale), int(illustration.height * scale)))
+        slide_bg.paste(illustration, (int((width - illustration.width)/2), cy + 50), illustration)
+        cy += illustration.height + 80
         
-        # 4. Content (with Color Sync)
-        font_size_body = 34
-        body_font = get_font(font_size_body, family="Inter")
-        
-        # Color syncing bullet point
-        bullet_color = (dom_color[0], dom_color[1], dom_color[2])
-        
-        content_limit = height - 150
+        body_font = get_font(38, family="Inter")
         for point in slide.get("content", []):
-            if y > content_limit: break
-            lines = textwrap.wrap(f"• {point}", width=45)
-            for line in lines:
-                draw.text((80, y), line, fill="#CBD5E1", font=body_font)
-                y += 42
-            y += 12
-
-        # 5. Footer & Branding
-        footer_font = get_font(26, is_bold=True, family="Inter")
-        draw.text((80, height - 90), f"{brand_name} • {handle}", fill=primary_color, font=footer_font)
-        if cta_text and idx == len(slides) - 1:
-            draw.text((80, height - 140), cta_text, fill="#CBD5E1", font=get_font(22, family="Inter"))
+            if cy > height - 170: break
+            for line in textwrap.wrap(f"• {point}", width=40):
+                draw.text((100, cy), line, fill="#E2E8F0", font=body_font)
+                cy += 52
+            cy += 20
+            
+        footer_font = get_font(32, is_bold=True, family="Inter")
+        draw.text((100, height - 120), handle, fill=accent_base, font=footer_font)
         
-        # Page indicator with pill background
-        page_txt = f"{idx+1} / {len(slides)}"
-        pw = draw.textbbox((0,0), page_txt, font=footer_font)[2]
-        draw.rounded_rectangle([width - pw - 100, height - 100, width - 60, height - 50], radius=25, fill=(255,255,255,20))
-        draw.text((width - pw - 80, height - 90), page_txt, fill="#94A3B8", font=footer_font)
-
+        final_slide = add_film_grain(slide_bg, intensity=0.045)
         buf = io.BytesIO()
-        img.convert("RGB").save(buf, format="PNG")
+        final_slide.convert("RGB").save(buf, format="PNG")
         rendered_slides.append(buf.getvalue())
-    
+        
     return rendered_slides

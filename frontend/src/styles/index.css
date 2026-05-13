@@ -4,57 +4,57 @@
 
 /* ---------- CSS Custom Properties (Design Tokens) ---------- */
 :root {
-    /* Brand Colors */
+    /* Brand Colors (Vibrant Neons) */
     --color-primary: #3b82f6;
     --color-primary-hover: #2563eb;
-    --color-primary-light: rgba(59, 130, 246, 0.15);
-    --color-primary-glow: rgba(59, 130, 246, 0.4);
-    --color-accent: #8b5cf6;
-    --color-accent-hover: #7c3aed;
-    --color-accent-light: rgba(139, 92, 246, 0.15);
+    --color-primary-light: rgba(59, 130, 246, 0.12);
+    --color-primary-glow: rgba(59, 130, 246, 0.35);
+    --color-accent: #a855f7;
+    --color-accent-hover: #9333ea;
+    --color-accent-light: rgba(168, 85, 247, 0.12);
     --color-success: #10b981;
-    --color-success-light: rgba(16, 185, 129, 0.15);
+    --color-success-light: rgba(16, 185, 129, 0.12);
     --color-warning: #f59e0b;
-    --color-warning-light: rgba(245, 158, 11, 0.15);
+    --color-warning-light: rgba(245, 158, 11, 0.12);
     --color-error: #ef4444;
-    --color-error-light: rgba(239, 68, 68, 0.15);
+    --color-error-light: rgba(239, 68, 68, 0.12);
     --color-info: #06b6d4;
 
-    /* Surface Colors */
-    --bg-base: #050a18;
-    --bg-surface: #0c1224;
-    --bg-elevated: #111a33;
-    --bg-card: rgba(15, 23, 55, 0.6);
-    --bg-card-hover: rgba(20, 30, 70, 0.7);
-    --bg-glass: rgba(15, 23, 55, 0.45);
-    --bg-input: rgba(15, 23, 55, 0.5);
+    /* Surface Colors (True Dark Premium) */
+    --bg-base: #030712;
+    --bg-surface: #080c18;
+    --bg-elevated: #0f172a;
+    --bg-card: rgba(15, 23, 42, 0.65);
+    --bg-card-hover: rgba(23, 37, 84, 0.45);
+    --bg-glass: rgba(15, 23, 42, 0.5);
+    --bg-input: rgba(2, 6, 23, 0.6);
 
     /* Text Colors */
-    --text-primary: #f0f4ff;
+    --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
     --text-tertiary: #64748b;
     --text-inverse: #0f172a;
 
     /* Borders */
-    --border-subtle: rgba(99, 115, 146, 0.15);
-    --border-default: rgba(99, 115, 146, 0.25);
+    --border-subtle: rgba(248, 250, 252, 0.06);
+    --border-default: rgba(248, 250, 252, 0.12);
     --border-focus: var(--color-primary);
-    --border-glow: 0 0 0 3px var(--color-primary-light);
+    --border-glow: 0 0 0 4px var(--color-primary-light);
 
-    /* Gradients */
-    --gradient-brand: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
-    --gradient-brand-text: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);
-    --gradient-surface: linear-gradient(180deg, #0c1224 0%, #050a18 100%);
-    --gradient-card: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
-    --gradient-hero: radial-gradient(ellipse at 50% 0%, rgba(59, 130, 246, 0.15) 0%, transparent 60%);
+    /* Gradients (Mesh & Aura) */
+    --gradient-brand: linear-gradient(135deg, #3b82f6 0%, #a855f7 50%, #ec4899 100%);
+    --gradient-brand-text: linear-gradient(135deg, #60a5fa 0%, #c084fc 50%, #f472b6 100%);
+    --gradient-surface: linear-gradient(180deg, #080c18 0%, #030712 100%);
+    --gradient-card: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%);
+    --gradient-hero: radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
 
     /* Shadows */
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
-    --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.6);
-    --shadow-glow-blue: 0 0 40px rgba(59, 130, 246, 0.2);
-    --shadow-glow-violet: 0 0 40px rgba(139, 92, 246, 0.2);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.6);
+    --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.7);
+    --shadow-xl: 0 24px 80px rgba(0, 0, 0, 0.8);
+    --shadow-glow-blue: 0 0 40px rgba(59, 130, 246, 0.15);
+    --shadow-glow-violet: 0 0 40px rgba(168, 85, 247, 0.15);
 
     /* Typography */
     --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -68,7 +68,7 @@
     --fs-4xl: 2.25rem;
     --fs-5xl: 3rem;
     --fs-6xl: 3.75rem;
-    --fs-hero: clamp(2.5rem, 5vw, 4.5rem);
+    --fs-hero: clamp(2.75rem, 6vw, 4.75rem);
 
     /* Spacing */
     --space-1: 0.25rem;
@@ -85,17 +85,17 @@
     --space-24: 6rem;
 
     /* Borders & Radius */
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 16px;
-    --radius-xl: 24px;
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
+    --radius-xl: 32px;
     --radius-full: 9999px;
 
     /* Transitions */
     --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    --transition-base: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 500ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-spring: 600ms cubic-bezier(0.34, 1.56, 0.64, 1);
 
     /* Z-Index Scale */
     --z-dropdown: 100;
@@ -194,46 +194,48 @@ input, textarea {
     border: 0;
 }
 
-/* ---------- Ambient Background Effects ---------- */
+/* ---------- Ambient Background Effects (Aura) ---------- */
 .ambient-bg {
     position: fixed;
     inset: 0;
     z-index: -1;
     overflow: hidden;
     pointer-events: none;
+    background: var(--bg-base);
 }
 
 .ambient-bg::before {
     content: '';
     position: absolute;
-    top: -40%;
-    left: -20%;
-    width: 80%;
-    height: 80%;
-    background: radial-gradient(circle, rgba(59, 130, 246, 0.06) 0%, transparent 60%);
-    animation: ambientDrift1 20s ease-in-out infinite;
+    top: -10%;
+    left: -10%;
+    width: 60%;
+    height: 60%;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
+    filter: blur(80px);
+    animation: auroraDrift1 25s ease-in-out infinite alternate;
 }
 
 .ambient-bg::after {
     content: '';
     position: absolute;
-    bottom: -30%;
-    right: -20%;
-    width: 70%;
-    height: 70%;
-    background: radial-gradient(circle, rgba(139, 92, 246, 0.05) 0%, transparent 60%);
-    animation: ambientDrift2 25s ease-in-out infinite;
+    bottom: -10%;
+    right: -10%;
+    width: 50%;
+    height: 50%;
+    background: radial-gradient(circle, rgba(168, 85, 247, 0.07) 0%, transparent 70%);
+    filter: blur(80px);
+    animation: auroraDrift2 30s ease-in-out infinite alternate;
 }
 
-@keyframes ambientDrift1 {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    33% { transform: translate(10%, 5%) scale(1.1); }
-    66% { transform: translate(-5%, 10%) scale(0.95); }
+@keyframes auroraDrift1 {
+    0% { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(20%, 10%) scale(1.2); }
 }
 
-@keyframes ambientDrift2 {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    50% { transform: translate(-8%, -5%) scale(1.08); }
+@keyframes auroraDrift2 {
+    0% { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(-15%, -15%) scale(1.1); }
 }
 
 /* ---------- Navbar ---------- */

@@ -13,7 +13,7 @@ import { router } from './router.js';
 const ICONS = {
     logo: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
         <defs><linearGradient id="lg" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/>
+            <stop stop-color="#3b82f6"/><stop offset="1" stop-color="#a855f7"/>
         </linearGradient></defs>
         <rect width="32" height="32" rx="8" fill="url(#lg)"/>
         <path d="M8 22L13 10l5 8 3-4 3 8" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
